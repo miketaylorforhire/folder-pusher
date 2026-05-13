@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { spawn } from 'node:child_process'
-import { stat, readdir, mkdir, copyFile, chmod } from 'node:fs/promises'
+import { stat, readdir, mkdir, copyFile, chmod, utimes } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -272,6 +272,14 @@ async function runCopyForMachine(src: string, dst: string, machine: string): Pro
 
     try {
       await copyFile(srcFile, dstFile)
+      // Preserve source mtime/atime on the destination — fs.copyFile doesn't
+      // do this, so without utimes the dest gets mtime=now and the dest file's
+      // metadata no longer matches the source it came from.
+      try {
+        await utimes(dstFile, srcStat.atime, srcStat.mtime)
+      } catch (err) {
+        emit(machine, `[warn] utimes ${relPath}: ${(err as Error).message}\r\n`)
+      }
       emit(machine, `[copy ${reason}] ${relPath}\r\n`)
       copied++
     } catch (err) {
