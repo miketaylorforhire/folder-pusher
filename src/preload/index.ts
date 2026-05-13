@@ -46,7 +46,11 @@ const api = {
     delete: (name: string): Promise<Profile[]> => ipcRenderer.invoke('profiles:delete', name)
   },
   isPackaged: (): Promise<boolean> => ipcRenderer.invoke('app:is-packaged'),
-  uninstall: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:uninstall')
+  uninstall: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:uninstall'),
+  update: {
+    check: () => ipcRenderer.invoke('update:check'),
+    install: (url: string) => ipcRenderer.invoke('update:install', url)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

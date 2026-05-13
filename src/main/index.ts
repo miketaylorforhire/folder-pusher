@@ -222,6 +222,48 @@ ipcMain.handle('profiles:list', () => loadProfiles())
 ipcMain.handle('profiles:save', (_e, profile: Omit<Profile, 'updatedAt'>) => saveProfile(profile))
 ipcMain.handle('profiles:delete', (_e, name: string) => deleteProfile(name))
 
+const RELEASES_REPO = 'miketaylorforhire/FolderPusher-releases'
+
+interface GhAsset { name: string; browser_download_url: string }
+interface GhRelease { tag_name?: string; assets?: GhAsset[] }
+
+ipcMain.handle('update:check', async () => {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
+      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'FolderPusher' }
+    })
+    if (!res.ok) return { ok: false, error: `GitHub API returned ${res.status}` }
+    const data = (await res.json()) as GhRelease
+    const latest = (data.tag_name ?? '').replace(/^v/, '')
+    const current = app.getVersion()
+    const asset = (data.assets ?? []).find((a) => /Setup.*\.exe$/i.test(a.name))
+    return {
+      ok: true,
+      current,
+      latest,
+      hasUpdate: !!latest && latest !== current,
+      downloadUrl: asset?.browser_download_url ?? null
+    }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+})
+
+ipcMain.handle('update:install', async (_e, url: string) => {
+  try {
+    const res = await fetch(url, { redirect: 'follow' })
+    if (!res.ok) return { ok: false, error: `Download failed: HTTP ${res.status}` }
+    const buf = Buffer.from(await res.arrayBuffer())
+    const tmpPath = join(app.getPath('temp'), 'FolderPusher-Update.exe')
+    writeFileSync(tmpPath, buf)
+    spawn(tmpPath, ['--upgrade'], { detached: true, stdio: 'ignore' }).unref()
+    setTimeout(() => app.quit(), 150)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+})
+
 ipcMain.handle('app:is-packaged', () => app.isPackaged)
 ipcMain.handle('app:uninstall', () => {
   if (!app.isPackaged) {

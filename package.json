@@ -1,6 +1,6 @@
 {
   "name": "folderpusher",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Copy one source folder to many destination machines on a LAN, using robocopy with skip-existing semantics.",
   "main": "./out/main/index.js",
   "type": "module",

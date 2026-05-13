@@ -261,6 +261,9 @@ onMounted(async () => {
   }
   isPackaged.value = await window.api.isPackaged()
   profiles.value = await window.api.profiles.list()
+  if (isPackaged.value) {
+    checkForUpdates(true)
+  }
   unsubStatus = window.api.onCopyStatus((d) => {
     const row = rows.value.find((r) => r.machine === d.machine)
     if (row) row.status = 'running'
@@ -312,6 +315,51 @@ async function uninstallApp(): Promise<void> {
   })
   if (!ok) return
   await window.api.uninstall()
+}
+
+const updateState = ref<{
+  status: 'idle' | 'checking' | 'available' | 'current' | 'installing' | 'error'
+  current?: string
+  latest?: string
+  downloadUrl?: string | null
+  error?: string
+}>({ status: 'idle' })
+
+async function checkForUpdates(silent = false): Promise<void> {
+  if (!isPackaged.value) {
+    if (!silent) updateState.value = { status: 'error', error: 'Updates only available in the installed app.' }
+    return
+  }
+  updateState.value = { status: 'checking' }
+  const res = await window.api.update.check()
+  if (!res.ok) {
+    updateState.value = silent ? { status: 'idle' } : { status: 'error', error: res.error }
+    return
+  }
+  if (res.hasUpdate && res.downloadUrl) {
+    updateState.value = {
+      status: 'available',
+      current: res.current,
+      latest: res.latest,
+      downloadUrl: res.downloadUrl
+    }
+  } else {
+    updateState.value = silent ? { status: 'idle' } : { status: 'current', current: res.current }
+  }
+}
+
+async function installUpdate(): Promise<void> {
+  const url = updateState.value.downloadUrl
+  if (updateState.value.status !== 'available' || !url) return
+  updateState.value = { ...updateState.value, status: 'installing' }
+  const res = await window.api.update.install(url)
+  if (!res.ok) {
+    updateState.value = { status: 'error', error: res.error }
+  }
+}
+
+function dismissUpdate(): void {
+  updateState.value = { status: 'idle' }
 }
 </script>
 
@@ -515,7 +563,11 @@ async function uninstallApp(): Promise<void> {
       </section>
 
       <footer v-if="isPackaged" class="app-footer">
-        <button class="text-button" @click="uninstallApp" :disabled="running">
+        <button class="text-button" @click="checkForUpdates(false)" :disabled="running || updateState.status === 'checking'">
+          {{ updateState.status === 'checking' ? 'Checking…' : 'Check for updates' }}
+        </button>
+        <span class="footer-sep">·</span>
+        <button class="text-button danger" @click="uninstallApp" :disabled="running">
           Uninstall FolderPusher
         </button>
       </footer>
@@ -541,6 +593,54 @@ async function uninstallApp(): Promise<void> {
               @click="handleConfirm(true)"
             >
               {{ confirmDialog.confirmLabel || 'OK' }}
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div
+        v-if="['available', 'current', 'error', 'installing'].includes(updateState.status)"
+        class="modal-backdrop"
+        @mousedown.self="updateState.status !== 'installing' && dismissUpdate()"
+      >
+        <div class="modal" role="dialog" aria-modal="true">
+          <header class="modal-header">
+            <h2 class="modal-title">
+              {{
+                updateState.status === 'available' ? 'Update available' :
+                updateState.status === 'current' ? 'Up to date' :
+                updateState.status === 'installing' ? 'Installing update…' :
+                'Update check failed'
+              }}
+            </h2>
+          </header>
+          <p class="modal-message">
+            <template v-if="updateState.status === 'available'">
+              FolderPusher v{{ updateState.latest }} is available. You're on v{{ updateState.current }}.
+              Installing will close FolderPusher, swap in the new files, and relaunch.
+            </template>
+            <template v-else-if="updateState.status === 'current'">
+              You're on the latest version (v{{ updateState.current }}).
+            </template>
+            <template v-else-if="updateState.status === 'installing'">
+              Downloading and launching the installer. The window will close in a moment.
+            </template>
+            <template v-else>
+              {{ updateState.error || 'Unknown error.' }}
+            </template>
+          </p>
+          <footer class="modal-actions" v-if="updateState.status !== 'installing'">
+            <button class="secondary-button" @click="dismissUpdate">
+              {{ updateState.status === 'available' ? 'Later' : 'Close' }}
+            </button>
+            <button
+              v-if="updateState.status === 'available'"
+              class="primary-button compact"
+              @click="installUpdate"
+            >
+              Install
             </button>
           </footer>
         </div>
@@ -1175,6 +1275,14 @@ input, textarea, select { font: inherit; color: inherit; }
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-sep {
+  color: var(--text-dim);
+  opacity: 0.5;
+  font-size: 11px;
 }
 
 .text-button {
@@ -1190,7 +1298,8 @@ input, textarea, select { font: inherit; color: inherit; }
   transition: color 0.12s;
 }
 
-.text-button:hover:not(:disabled) { color: var(--error); }
+.text-button:hover:not(:disabled) { color: var(--accent); }
+.text-button.danger:hover:not(:disabled) { color: var(--error); }
 .text-button:disabled { cursor: not-allowed; opacity: 0.5; }
 
 /* ────────────────────────────────────────────────────────────

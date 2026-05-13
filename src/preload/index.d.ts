@@ -41,6 +41,17 @@ export interface Api {
   }
   isPackaged: () => Promise<boolean>
   uninstall: () => Promise<{ ok: boolean; error?: string }>
+  update: {
+    check: () => Promise<{
+      ok: boolean
+      error?: string
+      current?: string
+      latest?: string
+      hasUpdate?: boolean
+      downloadUrl?: string | null
+    }>
+    install: (url: string) => Promise<{ ok: boolean; error?: string }>
+  }
 }
 
 declare global {
