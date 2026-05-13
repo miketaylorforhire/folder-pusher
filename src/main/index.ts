@@ -169,7 +169,7 @@ async function runRobocopyForMachine(src: string, dst: string, machine: string):
     const args = [
       src,
       dst,
-      '/E', '/XC', '/XO', '/Z', '/V',
+      '/E', '/XO', '/Z', '/V',
       '/R:3', '/W:2',
       '/NP', '/NDL', '/NJH', '/NJS'
     ]

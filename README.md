@@ -23,12 +23,15 @@ It should:
 This exact `robocopy` invocation already works correctly for this use case. Use it.
 
 ```
-robocopy <SRC> <DST> /E /XC /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+robocopy <SRC> <DST> /E /XO /Z /R:3 /W:2 /NP /NDL /NJH /NJS
 ```
 
 Flag meanings (don't change without thinking — these are subtle):
 - `/E` — copy all subdirectories, including empty ones.
-- `/XC /XO` — together these implement newer-wins. In robocopy's terminology, a "Newer" file is one where **source is newer than destination**, and an "Older" file is one where **source is older than destination**. So `/XO` (eXclude Older) skips files where source would *downgrade* a newer destination — preserving it. Files where source is newer are NOT excluded by either flag, so they overwrite. `/XC` (eXclude Changed) covers the weird "same timestamp, different size" case where we'd rather not touch the destination.
+- `/XO` — eXclude Older. In robocopy's terminology, an "Older" file is one where **source is older than destination**, so `/XO` prevents the source from *downgrading* a newer destination. That's the only exclusion we want.
+- We intentionally do NOT pass `/XC`. "Changed" in robocopy means same timestamp, different size — which is a common case when a file was placed at the source via a copy that preserved the original timestamp (so source mtime equals the existing dest mtime) but the file's content is genuinely different. `/XC` would skip these. We want them copied. (Real example: an album-cover.jpg replaced from a different release of the same album — same archive date, different image content.)
+- We intentionally do NOT pass `/XN` either. "Newer" means source-newer-than-dest, which is the case we MOST want to copy.
+- We intentionally do NOT pass `/MT`. Multi-threaded robocopy can occasionally drop files from its work queue under specific SMB enumeration conditions. Single-threaded is slower on huge trees but never silently misses a file.
 - To revert to a never-overwrite "skip-existing" build, also add `/XN`.
 - `/Z` — restartable mode. Useful on flaky LAN connections.
 - `/R:2 /W:5` — retry twice, wait 5 seconds between retries. Defaults are 1 million retries with 30s waits, which means an unreachable destination hangs for hours. With `/R:2 /W:5`, unreachable destinations fail in about 10 seconds.
@@ -127,7 +130,7 @@ $destMachines = @('KYPES-HQ','KYPES-HQ2','KYPES-LEISURE','KYPES-LEISURE2','KYPES
 foreach ($m in $destMachines) {
   $dst = "\\$m\Users\Public\Music\Wes Montgomery\Echoes Of Indiana Avenue"
   Write-Host "=== $m ==="
-  robocopy $src $dst /E /XC /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+  robocopy $src $dst /E /XO /Z /R:3 /W:2 /NP /NDL /NJH /NJS
   $rc = $LASTEXITCODE
   $status = if ($rc -lt 8) { 'OK' } else { 'FAILED' }
   Write-Host "$m: rc=$rc ($status)"
