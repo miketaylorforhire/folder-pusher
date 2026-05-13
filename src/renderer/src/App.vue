@@ -79,8 +79,8 @@ const canCopy = computed(
 
 const sizeLabel = computed(() => {
   if (!probe.value?.exists) return ''
-  const mb = probe.value.bytes / (1024 * 1024)
-  return `${mb.toFixed(1)} MB · ${probe.value.files} files`
+  const gb = probe.value.bytes / (1024 * 1024 * 1024)
+  return `${gb.toFixed(1)} GB · ${probe.value.files.toLocaleString()} files`
 })
 
 const summary = computed(() => {
