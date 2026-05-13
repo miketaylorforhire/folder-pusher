@@ -1,0 +1,100 @@
+# Template: copy this to .github/workflows/upload-asset.yml in the
+# FolderPusher-releases repo. The release script's chunked-LFS-pipe
+# fallback requires this workflow to exist — without it, a pipe push
+# lands but nothing reacts.
+#
+# What it does: when a `pipe/<tag>` branch is pushed (the release script
+# creates this when uploads.github.com is too flaky for direct upload),
+# the workflow checks out with LFS, reads INSTALLER_MANIFEST.json,
+# concatenates installer.part-* into the original filename, verifies
+# the SHA256, and posts the assembled asset to the release. The final
+# upload is GH→GH, never traversing the developer's flaky network.
+
+name: Upload installer to release
+
+on:
+  push:
+    branches:
+      - 'pipe/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to upload to (e.g. v0.1.0)'
+        required: true
+      branch:
+        description: 'Pipe branch to read from'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with LFS)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }}
+          lfs: true
+
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ -f RELEASE_TAG ]; then
+            echo "tag=$(cat RELEASE_TAG | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::no RELEASE_TAG file and no manual tag input"
+            exit 1
+          fi
+
+      - name: Assemble installer from chunks
+        id: file
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f INSTALLER_MANIFEST.json ]; then
+            echo "::error::INSTALLER_MANIFEST.json missing — pipe branch is malformed"
+            exit 1
+          fi
+          name=$(jq -r '.name' INSTALLER_MANIFEST.json)
+          want_size=$(jq -r '.size' INSTALLER_MANIFEST.json)
+          want_sha=$(jq -r '.sha256' INSTALLER_MANIFEST.json)
+          want_count=$(jq -r '.chunkCount' INSTALLER_MANIFEST.json)
+
+          got_count=$(ls -1 installer.part-* 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$got_count" -ne "$want_count" ]; then
+            echo "::error::expected $want_count chunks, found $got_count"
+            exit 1
+          fi
+
+          # Sort lexically — chunk names are zero-padded so lex == numeric.
+          cat $(ls installer.part-* | sort) > "$name"
+
+          got_size=$(stat -c%s "$name")
+          if [ "$got_size" -ne "$want_size" ]; then
+            echo "::error::assembled size $got_size != manifest size $want_size"
+            exit 1
+          fi
+          got_sha=$(sha256sum "$name" | awk '{print $1}')
+          if [ "$got_sha" != "$want_sha" ]; then
+            echo "::error::SHA256 mismatch — assembled=$got_sha manifest=$want_sha"
+            exit 1
+          fi
+
+          echo "path=$name" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -lh "$name"
+          echo "OK: $name ($(numfmt --to=iec-i --suffix=B $got_size), sha256=$got_sha)"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            "${{ steps.file.outputs.path }}" \
+            --repo "${{ github.repository }}" \
+            --clobber

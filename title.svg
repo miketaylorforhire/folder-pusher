@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -8 520 96" width="520" height="96" role="img" aria-label="FolderPusher">
+  <style>
+    .word { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; font-size: 64px; letter-spacing: -0.02em; }
+    .folder { fill: #e6a84a; }
+    .pusher { fill: #c5402d; }
+  </style>
+  <text x="0" y="64" class="word folder">FOLDER</text>
+  <text x="232" y="64" class="word pusher">PUSHER</text>
+</svg>

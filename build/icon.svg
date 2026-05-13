@@ -1,0 +1,14 @@
+<svg width="256" height="256" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Back folder (green) -->
+  <path d="M4 6 L11 6 L13 8 L21 8 L21 19 L4 19 Z"
+        fill="#4ade80" stroke="rgba(0,0,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+  <!-- Third folder (blue) -->
+  <path d="M6.5 8.5 L13.5 8.5 L15.5 10.5 L23.5 10.5 L23.5 21.5 L6.5 21.5 Z"
+        fill="#60a5fa" stroke="rgba(0,0,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+  <!-- Second folder (red/coral) -->
+  <path d="M9 11 L16 11 L18 13 L26 13 L26 24 L9 24 Z"
+        fill="#f87171" stroke="rgba(0,0,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+  <!-- Front folder (amber) -->
+  <path d="M11.5 13.5 L18.5 13.5 L20.5 15.5 L28.5 15.5 L28.5 26.5 L11.5 26.5 Z"
+        fill="#fbbf24" stroke="rgba(0,0,0,0.35)" stroke-width="0.6" stroke-linejoin="round"/>
+</svg>

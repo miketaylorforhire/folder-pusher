@@ -1,4 +1,6 @@
-# Folder Pusher
+![FolderPusher](title.svg)
+
+# FolderPusher
 
 A small Windows desktop app that copies one source folder to many destination machines on a LAN, with skip-existing semantics and per-destination reporting. The single-purpose tool version of the robocopy-loop we just ran by hand.
 
@@ -64,14 +66,14 @@ A robocopy source argument is the **parent** of the files being copied, and the 
 Alternatives if you don't want Electron:
 - **PowerShell + WinForms** — single .ps1 with a basic GUI. Zero install. Looks like the year 2003. Fine for personal use.
 - **.NET 8 WinForms or WPF** — native Windows app, no Chromium. Larger learning curve if you're not already in .NET.
-- **A plain CLI** — simplest. Skip the GUI entirely. `folder-pusher.exe --src "..." --machines KYPES-HQ,KYPES-HQ2,... --template "\\{machine}\..."`.
+- **A plain CLI** — simplest. Skip the GUI entirely. `folderpusher.exe --src "..." --machines KYPES-HQ,KYPES-HQ2,... --template "\\{machine}\..."`.
 
 ## UI sketch (Electron version)
 
 A single window with three sections stacked vertically:
 
 ```
-┌─ Folder Pusher ─────────────────────────────────────────────┐
+┌─ FolderPusher ─────────────────────────────────────────────┐
 │ Source: [\\KYPES-DOWNSTAIRS\...\Echoes Of Indiana Avenue]  📁 │
 │         121.0 MB, 10 files                                   │
 │                                                              │
@@ -135,4 +137,4 @@ Six destinations × 121 MB took ~13.5 minutes total (sequential). A parallel ver
 
 ## Naming
 
-Pick whatever, but the placeholder name is **Folder Pusher**. Other candidates: `LAN Copy`, `Mirror Many`, `Branch Copy`, `Share Pusher`. The repo folder is currently `folder-pusher`.
+Pick whatever, but the placeholder name is **FolderPusher**. Other candidates: `LAN Copy`, `Mirror Many`, `Branch Copy`, `Share Pusher`. The repo folder is currently `folder-pusher`.

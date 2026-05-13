@@ -1,0 +1,56 @@
+{
+  "name": "folderpusher-installer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Themed installer for FolderPusher",
+  "author": "Mike Taylor",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.folderpusher.installer",
+    "productName": "FolderPusher Setup",
+    "asar": true,
+    "directories": {
+      "output": "../release/installer"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "styles.css",
+      "icon.ico",
+      "title.svg",
+      "favicon-256.png"
+    ],
+    "extraResources": [
+      {
+        "from": "payload",
+        "to": "payload"
+      }
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "FolderPusher Setup.exe"
+    },
+    "portable": {
+      "artifactName": "FolderPusher Setup.exe"
+    }
+  }
+}

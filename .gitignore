@@ -5,3 +5,12 @@ dist/
 .vite/
 *.log
 .DS_Store
+.vscode/
+*.tsbuildinfo
+build/codesign/
+build/icon.ico
+installer/payload/
+installer/node_modules/
+installer/icon.ico
+installer/title.svg
+installer/favicon-256.png

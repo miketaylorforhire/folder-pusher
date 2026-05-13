@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FolderPusher — Setup</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="titlebar">
+    <span id="titlebar-text">FOLDERPUSHER — SETUP</span>
+    <div class="controls">
+      <button class="dot" id="min-btn" title="Minimize"></button>
+      <button class="dot close" id="close-btn" title="Close"></button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="sidebar">
+      <img class="brand" src="title.svg" alt="FolderPusher" />
+      <div class="step" data-step="welcome">01 · Welcome</div>
+      <div class="step" data-step="location">02 · Location</div>
+      <div class="step" data-step="installing">03 · Install</div>
+      <div class="step" data-step="finish">04 · Finish</div>
+    </div>
+    <div class="content">
+
+      <div class="screen" data-screen="welcome">
+        <div class="kicker">— Copy folders across the LAN</div>
+        <div class="title">FolderPusher.</div>
+        <p class="para">
+          Push one source folder to many destination machines on your network,
+          using robocopy with skip-existing semantics. This setup will install
+          FolderPusher just for you. No admin needed.
+        </p>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn ghost" id="welcome-cancel">Cancel</button>
+          <button class="btn primary" id="welcome-next">Continue →</button>
+        </div>
+      </div>
+
+      <div class="screen" data-screen="location">
+        <div class="kicker">— Where should we put this?</div>
+        <div class="title">Pick a spot.</div>
+        <p class="para">
+          We'll install into your local app folder by default — you probably don't need
+          to change this.
+        </p>
+        <div class="pathbox">
+          <span class="path" id="path-display">…</span>
+          <button class="browse" id="browse-btn">Browse…</button>
+        </div>
+        <div class="detail" id="space-detail">Checking available space…</div>
+        <div class="error" id="location-error" style="display: none;"></div>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn ghost" id="location-back">← Back</button>
+          <button class="btn primary" id="location-next">Install →</button>
+        </div>
+      </div>
+
+      <div class="screen" data-screen="installing">
+        <div class="kicker">— Unpacking</div>
+        <div class="title">One moment…</div>
+        <p class="para">
+          Copying files and setting up the shortcuts. This usually takes less than
+          a minute.
+        </p>
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <div class="progress-label">
+            <span id="progress-stage">Extracting resources</span>
+            <span id="progress-pct">0%</span>
+          </div>
+        </div>
+        <div class="file-ticker" id="progress-file">&nbsp;</div>
+        <div class="error" id="install-error" style="display: none;"></div>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn ghost" disabled>← Back</button>
+          <button class="btn ghost" id="install-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div class="screen" data-screen="finish">
+        <div class="kicker">— Installed</div>
+        <div class="title big">Ready to push.</div>
+        <p class="para">
+          FolderPusher is installed and ready. Launch it, pick a source folder,
+          enter your destination machines, and go.
+        </p>
+        <div class="check-row checked" id="launch-toggle">
+          <div class="check-box"></div>
+          <span>Launch FolderPusher now</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn primary" id="finish-btn">Finish</button>
+        </div>
+      </div>
+
+      <div class="screen" data-screen="uninstall-confirm">
+        <div class="kicker">— Uninstall</div>
+        <div class="title">Remove FolderPusher.</div>
+        <p class="para">
+          This will remove the application and its shortcuts.
+        </p>
+        <div class="detail" id="uninstall-path">Looking for install…</div>
+        <div class="check-row" id="wipe-data-toggle" style="margin-top: 14px;">
+          <div class="check-box"></div>
+          <span>Also delete my saved profiles and settings</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn ghost" id="uninstall-cancel">Cancel</button>
+          <button class="btn primary" id="uninstall-confirm">Remove</button>
+        </div>
+      </div>
+
+      <div class="screen" data-screen="uninstalling">
+        <div class="kicker">— Removing</div>
+        <div class="title">One moment…</div>
+        <p class="para">Cleaning up files and shortcuts.</p>
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: 50%"></div>
+          </div>
+        </div>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="screen" data-screen="upgrading">
+        <div class="kicker">— Updating</div>
+        <div class="title">Installing the new version…</div>
+        <p class="para">We're stopping the running app, swapping in the new files, and starting it back up.</p>
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" id="upgrade-fill"></div>
+          </div>
+          <div class="progress-label">
+            <span id="upgrade-stage">Preparing</span>
+            <span id="upgrade-pct">0%</span>
+          </div>
+        </div>
+        <div class="file-ticker" id="upgrade-file">&nbsp;</div>
+        <div class="error" id="upgrade-error" style="display: none;"></div>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="screen" data-screen="uninstalled">
+        <div class="kicker">— Done</div>
+        <div class="title big">Uninstalled.</div>
+        <p class="para">FolderPusher has been removed.</p>
+        <div class="spacer"></div>
+        <div class="actions">
+          <button class="btn primary" id="uninstalled-close">Close</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>
