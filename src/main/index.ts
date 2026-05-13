@@ -218,22 +218,24 @@ async function runCopyForMachine(src: string, dst: string, machine: string): Pro
     }
 
     // Decide whether to copy.
+    // Rule: size differs ⇒ content differs ⇒ copy (regardless of mtime).
+    //       size matches  ⇒ trust mtime: src newer copies, src older skips.
+    // We don't rely on mtime alone because a file dropped into the source via
+    // a tool that preserved the origin mtime can be "older than dest" by
+    // filesystem time but obviously different by content (different size).
     let action: 'copy' | 'skip'
     let reason: string
     if (!dstStat) {
       action = 'copy'
       reason = 'new'
+    } else if (srcStat.size !== dstStat.size) {
+      action = 'copy'
+      reason = `size differs (${dstStat.size} -> ${srcStat.size} bytes)`
     } else {
       const dtime = srcStat.mtimeMs - dstStat.mtimeMs
-      const sameTime = Math.abs(dtime) <= MTIME_TOLERANCE_MS
-      if (sameTime) {
-        if (srcStat.size === dstStat.size) {
-          action = 'skip'
-          reason = 'same'
-        } else {
-          action = 'copy'
-          reason = `changed (same mtime, ${dstStat.size}->${srcStat.size} bytes)`
-        }
+      if (Math.abs(dtime) <= MTIME_TOLERANCE_MS) {
+        action = 'skip'
+        reason = 'same'
       } else if (dtime > 0) {
         action = 'copy'
         reason = `newer (src ${srcStat.mtime.toISOString()} > dst ${dstStat.mtime.toISOString()})`
