@@ -2,7 +2,7 @@
 
 # FolderPusher
 
-A small Windows desktop app that copies one source folder to many destination machines on a LAN, with skip-existing semantics and per-destination reporting. The single-purpose tool version of the robocopy-loop we just ran by hand.
+A small Windows desktop app that copies one source folder to many destination machines on a LAN, with newer-wins semantics and per-destination reporting. The single-purpose tool version of the robocopy-loop we just ran by hand.
 
 ## What it should do
 
@@ -13,7 +13,7 @@ Given:
 
 It should:
 1. Verify the source path is reachable and report its size + file count up front.
-2. For each destination, run `robocopy` with skip-existing semantics.
+2. For each destination, run `robocopy` with newer-wins semantics (copy missing files, overwrite older destination files, leave newer destination files alone).
 3. Stream per-destination progress to the UI.
 4. Produce a summary table when done: machine, status, new files copied, elapsed seconds, exit code.
 5. Be safely re-runnable — running it again should no-op on any machine that already has a complete copy.
@@ -23,12 +23,12 @@ It should:
 This exact `robocopy` invocation already works correctly for this use case. Use it.
 
 ```
-robocopy <SRC> <DST> /E /XC /XN /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+robocopy <SRC> <DST> /E /XC /XN /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
 ```
 
 Flag meanings (don't change without thinking):
 - `/E` — copy all subdirectories, including empty ones.
-- `/XC /XN /XO` — combined, this means "skip any file that already exists at the destination, regardless of whether it's Changed, Newer, or Older." This is what "skip existing" means. Without all three, robocopy will overwrite older or newer files at the destination, which is **not** what we want.
+- `/XC /XN` — skip files that exist at the destination and are either Changed (same time, different size) or Newer than the source. Files where the source is newer (i.e., destination is older) are NOT excluded — they get overwritten. To revert to a never-overwrite "skip-existing" build, add `/XO` back.
 - `/Z` — restartable mode. Useful on flaky LAN connections.
 - `/R:2 /W:5` — retry twice, wait 5 seconds between retries. Defaults are 1 million retries with 30s waits, which means an unreachable destination hangs for hours. With `/R:2 /W:5`, unreachable destinations fail in about 10 seconds.
 - `/MT:8` — multi-threaded copy. 8 threads is a good number for LAN gigabit.
@@ -105,7 +105,7 @@ A single window with three sections stacked vertically:
 - **Destination machine reachable but path doesn't exist**: robocopy creates intermediate folders by default — good. But the parent share must exist.
 - **Permission denied**: usually means the destination share has different ACLs than expected. Surface the robocopy error message in the row.
 - **Concurrent invocations**: don't run more than one copy job at a time to avoid saturating the source machine's share I/O. UI should disable Copy while one is running.
-- **Source modified during copy**: not a concern with skip-existing — if a new file appears partway through, it just gets picked up on the next run.
+- **Source modified during copy**: a new file appearing partway through gets picked up on the next run. An existing file changed mid-job won't be re-copied within the same run, but a subsequent run will pick it up via the newer-wins rule.
 
 ## Stretch goals (don't do these initially)
 
@@ -126,7 +126,7 @@ $destMachines = @('KYPES-HQ','KYPES-HQ2','KYPES-LEISURE','KYPES-LEISURE2','KYPES
 foreach ($m in $destMachines) {
   $dst = "\\$m\Users\Public\Music\Wes Montgomery\Echoes Of Indiana Avenue"
   Write-Host "=== $m ==="
-  robocopy $src $dst /E /XC /XN /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+  robocopy $src $dst /E /XC /XN /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
   $rc = $LASTEXITCODE
   $status = if ($rc -lt 8) { 'OK' } else { 'FAILED' }
   Write-Host "$m: rc=$rc ($status)"
