@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { stat, readdir } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { stat, readdir, mkdir, copyFile, chmod } from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -133,95 +133,163 @@ interface CopyResult {
 }
 
 let activeJob = false
-let activeProc: ChildProcess | null = null
 let cancelRequested = false
 
-function stripDestAttributes(dst: string, machine: string): Promise<void> {
-  // Robocopy normally clears Read-only on the destination before overwriting,
-  // but over SMB the attribute-clear can silently fail and the file gets
-  // skipped with rc=0 (looks like success but the file wasn't replaced).
-  // Pre-strip Read-only / Hidden / System on the entire dest tree so robocopy
-  // never has to fight existing attributes. Safe to run even when dst doesn't
-  // exist yet — attrib just errors and we move on.
-  return new Promise((resolve) => {
-    mainWindow?.webContents.send('copy:line', {
-      machine,
-      text: `> attrib -R -H -S "${dst}\\*" /S /D\r\n`
-    })
-    const proc = spawn('attrib', ['-R', '-H', '-S', `${dst}\\*`, '/S', '/D'], {
-      windowsHide: true
-    })
-    proc.stdout?.on('data', (c: Buffer) =>
-      mainWindow?.webContents.send('copy:line', { machine, text: c.toString() })
-    )
-    proc.stderr?.on('data', (c: Buffer) =>
-      mainWindow?.webContents.send('copy:line', { machine, text: c.toString() })
-    )
-    proc.on('close', () => resolve())
-    proc.on('error', () => resolve())
-  })
+// Walk a directory tree, yielding files relative to the base.
+async function* walkFiles(base: string, rel = ''): AsyncGenerator<string> {
+  const here = rel ? join(base, rel) : base
+  let entries
+  try {
+    entries = await readdir(here, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    const childRel = rel ? `${rel}\\${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      yield* walkFiles(base, childRel)
+    } else if (entry.isFile()) {
+      yield childRel
+    }
+  }
 }
 
-async function runRobocopyForMachine(src: string, dst: string, machine: string): Promise<CopyResult> {
-  const start = Date.now()
-  await stripDestAttributes(dst, machine)
-  return new Promise((resolve) => {
-    const args = [
-      src,
-      dst,
-      '/E', '/XO', '/Z', '/V',
-      '/R:3', '/W:2',
-      '/NP', '/NDL', '/NJH', '/NJS'
-    ]
-    // Emit the exact command up front so the user can see what was run.
-    mainWindow?.webContents.send('copy:line', {
-      machine,
-      text: `> robocopy ${args.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}\r\n`
-    })
-    const proc = spawn('robocopy', args, { windowsHide: true })
-    activeProc = proc
-    let newFiles = 0
-    let stderr = ''
+// Mtime tolerance for "same time" — SMB/FAT may round to 2-second precision.
+const MTIME_TOLERANCE_MS = 2000
 
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      const text = chunk.toString()
-      // Count "Newer" / "New File" lines only — these are the actual copies.
-      newFiles += (text.match(/^\s*(New File|Newer)\b/gm) ?? []).length
-      mainWindow?.webContents.send('copy:line', { machine, text })
-    })
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    proc.on('close', (code) => {
-      const wasCancelled = cancelRequested
-      activeProc = null
-      const exitCode = code ?? -1
-      const elapsedSeconds = Math.round((Date.now() - start) / 1000)
-      const status: 'ok' | 'failed' =
-        wasCancelled || exitCode < 0 || exitCode >= 8 ? 'failed' : 'ok'
-      const error = wasCancelled
-        ? 'Cancelled by user.'
-        : status === 'failed'
-          ? stderr.trim() || `robocopy exit ${exitCode}`
-          : undefined
-      mainWindow?.webContents.send('copy:line', {
-        machine,
-        text: `\r\n[exit code ${exitCode} — ${newFiles} file(s) copied, ${elapsedSeconds}s elapsed]\r\n`
-      })
-      resolve({ machine, status, exitCode, newFiles, elapsedSeconds, error })
-    })
-    proc.on('error', (err) => {
-      activeProc = null
-      resolve({
+function emit(machine: string, text: string): void {
+  mainWindow?.webContents.send('copy:line', { machine, text })
+}
+
+async function runCopyForMachine(src: string, dst: string, machine: string): Promise<CopyResult> {
+  const start = Date.now()
+  emit(machine, `> node-copy "${src}" -> "${dst}"\r\n`)
+
+  let copied = 0
+  let skipped = 0
+  let failed = 0
+  const errors: string[] = []
+
+  try {
+    await mkdir(dst, { recursive: true })
+  } catch (err) {
+    emit(machine, `[error] mkdir dest: ${(err as Error).message}\r\n`)
+    return {
+      machine,
+      status: 'failed',
+      exitCode: -1,
+      newFiles: 0,
+      elapsedSeconds: Math.round((Date.now() - start) / 1000),
+      error: `Failed to create destination: ${(err as Error).message}`
+    }
+  }
+
+  for await (const relPath of walkFiles(src)) {
+    if (cancelRequested) {
+      emit(machine, '[cancelled]\r\n')
+      return {
         machine,
         status: 'failed',
         exitCode: -1,
-        newFiles: 0,
+        newFiles: copied,
         elapsedSeconds: Math.round((Date.now() - start) / 1000),
-        error: err.message
-      })
-    })
-  })
+        error: 'Cancelled by user.'
+      }
+    }
+
+    const srcFile = join(src, relPath)
+    const dstFile = join(dst, relPath)
+
+    let srcStat
+    try {
+      srcStat = await stat(srcFile)
+    } catch (err) {
+      emit(machine, `[error] stat src ${relPath}: ${(err as Error).message}\r\n`)
+      failed++
+      errors.push(`${relPath}: ${(err as Error).message}`)
+      continue
+    }
+
+    let dstStat
+    try {
+      dstStat = await stat(dstFile)
+    } catch {
+      dstStat = null
+    }
+
+    // Decide whether to copy.
+    let action: 'copy' | 'skip'
+    let reason: string
+    if (!dstStat) {
+      action = 'copy'
+      reason = 'new'
+    } else {
+      const dtime = srcStat.mtimeMs - dstStat.mtimeMs
+      const sameTime = Math.abs(dtime) <= MTIME_TOLERANCE_MS
+      if (sameTime) {
+        if (srcStat.size === dstStat.size) {
+          action = 'skip'
+          reason = 'same'
+        } else {
+          action = 'copy'
+          reason = `changed (same mtime, ${dstStat.size}->${srcStat.size} bytes)`
+        }
+      } else if (dtime > 0) {
+        action = 'copy'
+        reason = `newer (src ${srcStat.mtime.toISOString()} > dst ${dstStat.mtime.toISOString()})`
+      } else {
+        action = 'skip'
+        reason = `older (src ${srcStat.mtime.toISOString()} < dst ${dstStat.mtime.toISOString()})`
+      }
+    }
+
+    if (action === 'skip') {
+      emit(machine, `[skip ${reason}] ${relPath}\r\n`)
+      skipped++
+      continue
+    }
+
+    // Ensure parent dir exists.
+    try {
+      await mkdir(dirname(dstFile), { recursive: true })
+    } catch (err) {
+      emit(machine, `[error] mkdir ${dirname(relPath)}: ${(err as Error).message}\r\n`)
+      failed++
+      errors.push(`${relPath}: ${(err as Error).message}`)
+      continue
+    }
+
+    // If destination exists, clear read-only attribute so copyFile can overwrite.
+    if (dstStat) {
+      try {
+        await chmod(dstFile, 0o666)
+      } catch {
+        // best-effort; copyFile will fail clearly if it really can't write
+      }
+    }
+
+    try {
+      await copyFile(srcFile, dstFile)
+      emit(machine, `[copy ${reason}] ${relPath}\r\n`)
+      copied++
+    } catch (err) {
+      emit(machine, `[error] copy ${relPath}: ${(err as Error).message}\r\n`)
+      failed++
+      errors.push(`${relPath}: ${(err as Error).message}`)
+    }
+  }
+
+  const elapsedSeconds = Math.round((Date.now() - start) / 1000)
+  const status: 'ok' | 'failed' = failed > 0 ? 'failed' : 'ok'
+  emit(machine, `\r\n[done — copied ${copied}, skipped ${skipped}, failed ${failed}, ${elapsedSeconds}s]\r\n`)
+  return {
+    machine,
+    status,
+    exitCode: failed,
+    newFiles: copied,
+    elapsedSeconds,
+    error: errors.length ? errors.slice(0, 3).join('; ') + (errors.length > 3 ? ` (+${errors.length - 3} more)` : '') : undefined
+  }
 }
 
 ipcMain.handle('source:probe', (_e, srcPath: string) => probeSource(srcPath))
@@ -238,21 +306,17 @@ ipcMain.handle('copy:start', async (_e, job: CopyJob) => {
       mainWindow?.webContents.send('copy:status', { machine, status: 'running' })
       const dstBase = job.template.replace(/\{machine\}/g, machine)
       const dst = join(dstBase, folderName)
-      const result = await runRobocopyForMachine(job.src, dst, machine)
+      const result = await runCopyForMachine(job.src, dst, machine)
       mainWindow?.webContents.send('copy:result', result)
     }
     return { ok: true, cancelled: cancelRequested }
   } finally {
     activeJob = false
-    activeProc = null
   }
 })
 
 ipcMain.handle('copy:cancel', () => {
   cancelRequested = true
-  if (activeProc) {
-    activeProc.kill()
-  }
 })
 
 ipcMain.handle('profiles:list', () => loadProfiles())
