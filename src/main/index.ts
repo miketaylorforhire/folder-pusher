@@ -136,14 +136,41 @@ let activeJob = false
 let activeProc: ChildProcess | null = null
 let cancelRequested = false
 
-function runRobocopyForMachine(src: string, dst: string, machine: string): Promise<CopyResult> {
+function stripDestAttributes(dst: string, machine: string): Promise<void> {
+  // Robocopy normally clears Read-only on the destination before overwriting,
+  // but over SMB the attribute-clear can silently fail and the file gets
+  // skipped with rc=0 (looks like success but the file wasn't replaced).
+  // Pre-strip Read-only / Hidden / System on the entire dest tree so robocopy
+  // never has to fight existing attributes. Safe to run even when dst doesn't
+  // exist yet — attrib just errors and we move on.
+  return new Promise((resolve) => {
+    mainWindow?.webContents.send('copy:line', {
+      machine,
+      text: `> attrib -R -H -S "${dst}\\*" /S /D\r\n`
+    })
+    const proc = spawn('attrib', ['-R', '-H', '-S', `${dst}\\*`, '/S', '/D'], {
+      windowsHide: true
+    })
+    proc.stdout?.on('data', (c: Buffer) =>
+      mainWindow?.webContents.send('copy:line', { machine, text: c.toString() })
+    )
+    proc.stderr?.on('data', (c: Buffer) =>
+      mainWindow?.webContents.send('copy:line', { machine, text: c.toString() })
+    )
+    proc.on('close', () => resolve())
+    proc.on('error', () => resolve())
+  })
+}
+
+async function runRobocopyForMachine(src: string, dst: string, machine: string): Promise<CopyResult> {
   const start = Date.now()
+  await stripDestAttributes(dst, machine)
   return new Promise((resolve) => {
     const args = [
       src,
       dst,
       '/E', '/XC', '/XO', '/Z', '/V',
-      '/R:2', '/W:5', '/MT:8',
+      '/R:3', '/W:2',
       '/NP', '/NDL', '/NJH', '/NJS'
     ]
     // Emit the exact command up front so the user can see what was run.
