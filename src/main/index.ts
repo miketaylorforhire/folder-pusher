@@ -142,10 +142,15 @@ function runRobocopyForMachine(src: string, dst: string, machine: string): Promi
     const args = [
       src,
       dst,
-      '/E', '/XC', '/XO', '/Z',
+      '/E', '/XC', '/XO', '/Z', '/V',
       '/R:2', '/W:5', '/MT:8',
       '/NP', '/NDL', '/NJH', '/NJS'
     ]
+    // Emit the exact command up front so the user can see what was run.
+    mainWindow?.webContents.send('copy:line', {
+      machine,
+      text: `> robocopy ${args.map((a) => (a.includes(' ') ? `"${a}"` : a)).join(' ')}\r\n`
+    })
     const proc = spawn('robocopy', args, { windowsHide: true })
     activeProc = proc
     let newFiles = 0
@@ -153,7 +158,8 @@ function runRobocopyForMachine(src: string, dst: string, machine: string): Promi
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
-      newFiles += text.split(/\r?\n/).filter((l) => l.trim().length > 0).length
+      // Count "Newer" / "New File" lines only — these are the actual copies.
+      newFiles += (text.match(/^\s*(New File|Newer)\b/gm) ?? []).length
       mainWindow?.webContents.send('copy:line', { machine, text })
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -171,6 +177,10 @@ function runRobocopyForMachine(src: string, dst: string, machine: string): Promi
         : status === 'failed'
           ? stderr.trim() || `robocopy exit ${exitCode}`
           : undefined
+      mainWindow?.webContents.send('copy:line', {
+        machine,
+        text: `\r\n[exit code ${exitCode} — ${newFiles} file(s) copied, ${elapsedSeconds}s elapsed]\r\n`
+      })
       resolve({ machine, status, exitCode, newFiles, elapsedSeconds, error })
     })
     proc.on('error', (err) => {

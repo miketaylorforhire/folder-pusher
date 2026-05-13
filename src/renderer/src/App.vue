@@ -12,6 +12,8 @@ interface Row {
   elapsedSeconds?: number
   exitCode?: number
   error?: string
+  log: string
+  showLog: boolean
 }
 
 interface ProbeResult {
@@ -252,6 +254,7 @@ function onGlobalKeydown(e: KeyboardEvent): void {
 
 let unsubStatus: (() => void) | null = null
 let unsubResult: (() => void) | null = null
+let unsubLine: (() => void) | null = null
 
 onMounted(async () => {
   document.addEventListener('keydown', onGlobalKeydown)
@@ -277,18 +280,28 @@ onMounted(async () => {
     row.exitCode = r.exitCode
     row.error = r.error
   })
+  unsubLine = window.api.onCopyLine((d) => {
+    const row = rows.value.find((x) => x.machine === d.machine)
+    if (row) row.log += d.text
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onGlobalKeydown)
   unsubStatus?.()
   unsubResult?.()
+  unsubLine?.()
 })
 
 async function startCopy(): Promise<void> {
   if (!canCopy.value) return
   commitDraft()
-  rows.value = machines.value.map((m) => ({ machine: m, status: 'queued' as const }))
+  rows.value = machines.value.map((m) => ({
+    machine: m,
+    status: 'queued' as const,
+    log: '',
+    showLog: false
+  }))
   running.value = true
   try {
     await window.api.startCopy({
@@ -549,14 +562,20 @@ function dismissUpdate(): void {
             class="progress-row-group"
             :class="{ 'has-error': !!row.error }"
           >
-            <div class="progress-row" :class="row.status">
+            <div
+              class="progress-row"
+              :class="[row.status, { clickable: !!row.log }]"
+              @click="row.log && (row.showLog = !row.showLog)"
+            >
               <span class="status-dot" :class="row.status" aria-hidden="true"></span>
               <span class="machine-name">{{ row.machine }}</span>
               <span class="row-meta">{{ statusLabel(row.status) }}</span>
               <span class="row-meta">{{ row.newFiles != null ? `${row.newFiles} files` : '' }}</span>
               <span class="row-meta">{{ row.elapsedSeconds != null ? `${row.elapsedSeconds}s` : '' }}</span>
               <span class="row-meta">{{ row.exitCode != null ? `rc ${row.exitCode}` : '' }}</span>
+              <span class="row-expand" v-if="row.log">{{ row.showLog ? '▼' : '▶' }}</span>
             </div>
+            <pre v-if="row.showLog && row.log" class="progress-log">{{ row.log }}</pre>
             <div v-if="row.error" class="progress-error">{{ row.error }}</div>
           </div>
         </div>
@@ -1483,7 +1502,7 @@ input, textarea, select { font: inherit; color: inherit; }
 
 .progress-row {
   display: grid;
-  grid-template-columns: 14px 1fr 90px 80px 60px 70px;
+  grid-template-columns: 14px 1fr 90px 80px 60px 70px 20px;
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -1494,6 +1513,32 @@ input, textarea, select { font: inherit; color: inherit; }
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   transition: background 0.15s;
+}
+
+.progress-row.clickable { cursor: pointer; user-select: none; }
+.progress-row.clickable:hover { background: var(--surface-elevated-hover, var(--accent-dim)); }
+
+.row-expand {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.progress-log {
+  margin: 0;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
 }
 
 [data-theme="hardware"] .progress-row {
