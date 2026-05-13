@@ -23,12 +23,13 @@ It should:
 This exact `robocopy` invocation already works correctly for this use case. Use it.
 
 ```
-robocopy <SRC> <DST> /E /XC /XN /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+robocopy <SRC> <DST> /E /XC /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
 ```
 
-Flag meanings (don't change without thinking):
+Flag meanings (don't change without thinking — these are subtle):
 - `/E` — copy all subdirectories, including empty ones.
-- `/XC /XN` — skip files that exist at the destination and are either Changed (same time, different size) or Newer than the source. Files where the source is newer (i.e., destination is older) are NOT excluded — they get overwritten. To revert to a never-overwrite "skip-existing" build, add `/XO` back.
+- `/XC /XO` — together these implement newer-wins. In robocopy's terminology, a "Newer" file is one where **source is newer than destination**, and an "Older" file is one where **source is older than destination**. So `/XO` (eXclude Older) skips files where source would *downgrade* a newer destination — preserving it. Files where source is newer are NOT excluded by either flag, so they overwrite. `/XC` (eXclude Changed) covers the weird "same timestamp, different size" case where we'd rather not touch the destination.
+- To revert to a never-overwrite "skip-existing" build, also add `/XN`.
 - `/Z` — restartable mode. Useful on flaky LAN connections.
 - `/R:2 /W:5` — retry twice, wait 5 seconds between retries. Defaults are 1 million retries with 30s waits, which means an unreachable destination hangs for hours. With `/R:2 /W:5`, unreachable destinations fail in about 10 seconds.
 - `/MT:8` — multi-threaded copy. 8 threads is a good number for LAN gigabit.
@@ -126,7 +127,7 @@ $destMachines = @('KYPES-HQ','KYPES-HQ2','KYPES-LEISURE','KYPES-LEISURE2','KYPES
 foreach ($m in $destMachines) {
   $dst = "\\$m\Users\Public\Music\Wes Montgomery\Echoes Of Indiana Avenue"
   Write-Host "=== $m ==="
-  robocopy $src $dst /E /XC /XN /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
+  robocopy $src $dst /E /XC /XO /Z /R:2 /W:5 /MT:8 /NP /NDL /NJH /NJS
   $rc = $LASTEXITCODE
   $status = if ($rc -lt 8) { 'OK' } else { 'FAILED' }
   Write-Host "$m: rc=$rc ($status)"

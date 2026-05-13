@@ -142,7 +142,7 @@ function runRobocopyForMachine(src: string, dst: string, machine: string): Promi
     const args = [
       src,
       dst,
-      '/E', '/XC', '/XN', '/Z',
+      '/E', '/XC', '/XO', '/Z',
       '/R:2', '/W:5', '/MT:8',
       '/NP', '/NDL', '/NJH', '/NJS'
     ]
