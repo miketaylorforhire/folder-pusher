@@ -9,7 +9,7 @@ const APP_DISPLAY_NAME = 'FolderPusher';
 const APP_FOLDER_NAME = 'FolderPusher';
 const APP_EXE_NAME = 'FolderPusher.exe';
 const APP_USERDATA_NAME = 'folderpusher';
-const APP_VERSION = '0.1.3';
+const APP_VERSION = '0.1.4';
 const UNINSTALL_REG_KEY = 'FolderPusher';
 const SHORTCUT_NAME = 'FolderPusher.lnk';
 
@@ -98,6 +98,12 @@ ipcMain.handle('install:register-uninstall', (_evt, targetDir) =>
 );
 
 async function runInstallInto(evt, targetDir) {
+  // Kill any running instance so we can overwrite locked .exe/.pak/.dll files.
+  // taskkill is a no-op if the app isn't running, and the helper swallows
+  // errors either way. Short sleep gives Windows time to release the handles.
+  await killRunningApp();
+  await sleep(600);
+
   const JSZip = require('jszip');
   const payloadPath = path.join(process.resourcesPath, 'payload', 'payload.zip');
   if (!fs.existsSync(payloadPath)) {
