@@ -41,6 +41,7 @@ interface ConfirmState {
 
 const STORAGE_KEY_THEME = 'folderpusher.theme'
 const STORAGE_KEY_AUTOFILL = 'folderpusher.autofillTemplate'
+const STORAGE_KEY_PROFILE = 'folderpusher.selectedProfile'
 const MAX_DESTINATIONS = 10
 
 const themes: { id: ThemeName; label: string }[] = [
@@ -102,6 +103,13 @@ function setTheme(t: ThemeName): void {
 function setAutoFillTemplate(on: boolean): void {
   autoFillTemplate.value = on
   localStorage.setItem(STORAGE_KEY_AUTOFILL, on ? '1' : '0')
+}
+
+// Persist the selected profile so the next launch restores it instead of
+// resetting to "— none —". An empty name clears the restore.
+function setSelectedProfile(name: string): void {
+  selectedProfile.value = name
+  localStorage.setItem(STORAGE_KEY_PROFILE, name)
 }
 
 function showConfirm(opts: Omit<ConfirmState, 'resolve'>): Promise<boolean> {
@@ -221,7 +229,7 @@ function focusChipInput(): void {
 }
 
 async function loadProfile(name: string): Promise<void> {
-  selectedProfile.value = name
+  setSelectedProfile(name)
   if (!name) return
   const p = profiles.value.find((x) => x.name === name)
   if (!p) return
@@ -253,7 +261,7 @@ async function saveProfileAs(): Promise<void> {
     template: template.value,
     destinations: destinations.value.join('\n')
   })
-  selectedProfile.value = name
+  setSelectedProfile(name)
   newProfileName.value = ''
   showSaveForm.value = false
 }
@@ -269,7 +277,7 @@ async function removeProfile(): Promise<void> {
   })
   if (!ok) return
   profiles.value = await window.api.profiles.delete(name)
-  selectedProfile.value = ''
+  setSelectedProfile('')
 }
 
 function statusLabel(s: RowStatus): string {
@@ -304,6 +312,12 @@ onMounted(async () => {
   }
   isPackaged.value = await window.api.isPackaged()
   profiles.value = await window.api.profiles.list()
+  // Restore the profile that was selected when the app was last closed. A
+  // launch source handed over later in this hook still overrides its fields.
+  const storedProfile = localStorage.getItem(STORAGE_KEY_PROFILE)
+  if (storedProfile && profiles.value.some((p) => p.name === storedProfile)) {
+    await loadProfile(storedProfile)
+  }
   if (isPackaged.value) {
     checkForUpdates(true)
   }
