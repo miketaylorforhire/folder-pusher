@@ -1,7 +1,7 @@
 {
   "name": "folderpusher-installer",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Themed installer for FolderPusher",
   "author": "Mike Taylor",
   "main": "main.js",

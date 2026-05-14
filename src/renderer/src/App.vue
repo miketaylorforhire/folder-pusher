@@ -49,7 +49,7 @@ const themes: { id: ThemeName; label: string }[] = [
 
 const theme = ref<ThemeName>('hardware')
 const src = ref('')
-const template = ref('\\\\{machine}\\Users\\Public\\Music\\Wes Montgomery')
+const template = ref('\\\\{machine}\\Users\\Public\\Music')
 const destinations = ref<string[]>([])
 const chipDraft = ref('')
 const chipInputEl = ref<HTMLInputElement | null>(null)
@@ -129,10 +129,29 @@ async function onProbeBlur(): Promise<void> {
   }
 }
 
+// Derive a destination template from a source path: strip the root (drive
+// letter or UNC host), drop the leaf folder (it's appended automatically),
+// and prepend \\{machine}\. Returns null for unrecognized path shapes so the
+// caller can leave the existing template alone.
+function deriveTemplate(srcPath: string): string | null {
+  const p = srcPath.trim().replace(/[\\/]+$/, '')
+  if (!p) return null
+  const drive = p.match(/^[A-Za-z]:[\\/]+(.*)$/)
+  const unc = p.match(/^[\\/]{2}[^\\/]+[\\/]+(.*)$/)
+  const rest = drive ? drive[1] : unc ? unc[1] : null
+  if (rest === null) return null
+  const segments = rest.split(/[\\/]+/).filter((s) => s.length > 0)
+  segments.pop() // leaf folder name is appended automatically downstream
+  const parent = segments.join('\\')
+  return parent ? `\\\\{machine}\\${parent}\\` : '\\\\{machine}\\'
+}
+
 async function pickSource(): Promise<void> {
   const picked = await window.api.pickSource(src.value.trim() || undefined)
   if (!picked) return
   src.value = picked
+  const derived = deriveTemplate(picked)
+  if (derived) template.value = derived
   await onProbeBlur()
 }
 
@@ -472,7 +491,7 @@ function dismissUpdate(): void {
         <input
           class="field-input mono"
           v-model="template"
-          placeholder="\\{machine}\Users\Public\Music\Wes Montgomery"
+          placeholder="\\{machine}\Users\Public\Music\"
           :disabled="running"
           spellcheck="false"
         />
