@@ -47,6 +47,12 @@ const api = {
   },
   isPackaged: (): Promise<boolean> => ipcRenderer.invoke('app:is-packaged'),
   uninstall: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:uninstall'),
+  getLaunchSource: (): Promise<string | null> => ipcRenderer.invoke('app:get-launch-source'),
+  onExternalSource: (cb: (path: string) => void) => {
+    const listener = (_e: unknown, path: string): void => cb(path)
+    ipcRenderer.on('source:external', listener)
+    return () => ipcRenderer.removeListener('source:external', listener)
+  },
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     install: (url: string) => ipcRenderer.invoke('update:install', url)

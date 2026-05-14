@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { spawn } from 'node:child_process'
 import { stat, readdir, mkdir, copyFile, chmod, utimes } from 'node:fs/promises'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, statSync } from 'node:fs'
 import { join, basename, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadProfiles, saveProfile, deleteProfile, type Profile } from './profiles.js'
@@ -9,6 +9,31 @@ import { loadProfiles, saveProfile, deleteProfile, type Profile } from './profil
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let mainWindow: BrowserWindow | null = null
+
+// A source folder passed on the command line (e.g. by WhoPlayedThat's
+// "Export to FolderPusher" button) — captured at launch, handed to the
+// renderer once it asks for it via app:get-launch-source.
+let pendingSourceArg: string | null = null
+
+// Scan argv for the first entry that's an existing directory. In a packaged
+// app argv is [exePath] or [exePath, "<folder>"]; flags are skipped.
+function extractFolderArg(argv: string[]): string | null {
+  for (const a of argv.slice(1)) {
+    if (a.startsWith('-')) continue
+    try {
+      if (statSync(a).isDirectory()) return a
+    } catch {
+      // not an existing path — skip
+    }
+  }
+  return null
+}
+
+function focusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.focus()
+}
 
 interface WindowState {
   x: number
@@ -375,6 +400,12 @@ ipcMain.handle('update:install', async (_e, url: string) => {
   }
 })
 
+ipcMain.handle('app:get-launch-source', () => {
+  const s = pendingSourceArg
+  pendingSourceArg = null
+  return s
+})
+
 ipcMain.handle('app:is-packaged', () => app.isPackaged)
 ipcMain.handle('app:uninstall', () => {
   if (!app.isPackaged) {
@@ -387,13 +418,28 @@ ipcMain.handle('app:uninstall', () => {
   return { ok: true }
 })
 
-app.whenReady().then(() => {
-  createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+// Single-instance lock: a second launch (e.g. WhoPlayedThat invoking
+// FolderPusher.exe "<album folder>" while it's already open) hands its argv
+// to the running instance instead of starting a new window.
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    focusMainWindow()
+    const folder = extractFolderArg(argv)
+    if (folder) mainWindow?.webContents.send('source:external', folder)
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+  app.whenReady().then(() => {
+    pendingSourceArg = extractFolderArg(process.argv)
+    createWindow()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}

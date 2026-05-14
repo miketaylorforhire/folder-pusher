@@ -153,15 +153,22 @@ function deriveTemplate(srcPath: string): string | null {
   return parent ? `\\\\{machine}\\${parent}\\` : '\\\\{machine}\\'
 }
 
-async function pickSource(): Promise<void> {
-  const picked = await window.api.pickSource(src.value.trim() || undefined)
-  if (!picked) return
-  src.value = picked
+// Apply a source folder (from the picker, the launch CLI arg, or another app
+// like WhoPlayedThat handing one over): set it, optionally auto-fill the
+// destination template, and probe.
+async function applySource(path: string): Promise<void> {
+  src.value = path
   if (autoFillTemplate.value) {
-    const derived = deriveTemplate(picked)
+    const derived = deriveTemplate(path)
     if (derived) template.value = derived
   }
   await onProbeBlur()
+}
+
+async function pickSource(): Promise<void> {
+  const picked = await window.api.pickSource(src.value.trim() || undefined)
+  if (!picked) return
+  await applySource(picked)
 }
 
 function addChips(raw: string): void {
@@ -283,6 +290,7 @@ function onGlobalKeydown(e: KeyboardEvent): void {
 let unsubStatus: (() => void) | null = null
 let unsubResult: (() => void) | null = null
 let unsubLine: (() => void) | null = null
+let unsubExternalSource: (() => void) | null = null
 
 onMounted(async () => {
   document.addEventListener('keydown', onGlobalKeydown)
@@ -316,6 +324,15 @@ onMounted(async () => {
     const row = rows.value.find((x) => x.machine === d.machine)
     if (row) row.log += d.text
   })
+  unsubExternalSource = window.api.onExternalSource((path) => {
+    applySource(path)
+  })
+  // A source folder passed at launch (e.g. from WhoPlayedThat's export button)
+  // when FolderPusher was started cold rather than already running.
+  const launchSource = await window.api.getLaunchSource()
+  if (launchSource) {
+    applySource(launchSource)
+  }
 })
 
 onUnmounted(() => {
@@ -323,6 +340,7 @@ onUnmounted(() => {
   unsubStatus?.()
   unsubResult?.()
   unsubLine?.()
+  unsubExternalSource?.()
 })
 
 async function startCopy(): Promise<void> {
