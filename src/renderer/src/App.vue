@@ -40,6 +40,7 @@ interface ConfirmState {
 }
 
 const STORAGE_KEY_THEME = 'folderpusher.theme'
+const STORAGE_KEY_AUTOFILL = 'folderpusher.autofillTemplate'
 const MAX_DESTINATIONS = 10
 
 const themes: { id: ThemeName; label: string }[] = [
@@ -48,6 +49,7 @@ const themes: { id: ThemeName; label: string }[] = [
 ]
 
 const theme = ref<ThemeName>('hardware')
+const autoFillTemplate = ref(true)
 const src = ref('')
 const template = ref('\\\\{machine}\\Users\\Public\\Music')
 const destinations = ref<string[]>([])
@@ -95,6 +97,11 @@ const summary = computed(() => {
 function setTheme(t: ThemeName): void {
   theme.value = t
   localStorage.setItem(STORAGE_KEY_THEME, t)
+}
+
+function setAutoFillTemplate(on: boolean): void {
+  autoFillTemplate.value = on
+  localStorage.setItem(STORAGE_KEY_AUTOFILL, on ? '1' : '0')
 }
 
 function showConfirm(opts: Omit<ConfirmState, 'resolve'>): Promise<boolean> {
@@ -150,8 +157,10 @@ async function pickSource(): Promise<void> {
   const picked = await window.api.pickSource(src.value.trim() || undefined)
   if (!picked) return
   src.value = picked
-  const derived = deriveTemplate(picked)
-  if (derived) template.value = derived
+  if (autoFillTemplate.value) {
+    const derived = deriveTemplate(picked)
+    if (derived) template.value = derived
+  }
   await onProbeBlur()
 }
 
@@ -280,6 +289,10 @@ onMounted(async () => {
   const stored = localStorage.getItem(STORAGE_KEY_THEME) as ThemeName | null
   if (stored && themes.some((t) => t.id === stored)) {
     theme.value = stored
+  }
+  const storedAutoFill = localStorage.getItem(STORAGE_KEY_AUTOFILL)
+  if (storedAutoFill !== null) {
+    autoFillTemplate.value = storedAutoFill === '1'
   }
   isPackaged.value = await window.api.isPackaged()
   profiles.value = await window.api.profiles.list()
@@ -498,6 +511,15 @@ function dismissUpdate(): void {
         <p class="field-hint">
           Use <code>{machine}</code> as the placeholder. The source folder name is appended automatically.
         </p>
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            :checked="autoFillTemplate"
+            :disabled="running"
+            @change="setAutoFillTemplate(($event.target as HTMLInputElement).checked)"
+          />
+          <span>Auto-fill this template from the source folder when I Browse</span>
+        </label>
       </section>
 
       <section class="field">
@@ -1062,6 +1084,30 @@ input, textarea, select { font: inherit; color: inherit; }
 
 .field-hint.ok { color: var(--success); }
 .field-hint.error { color: var(--error); }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.toggle-row input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 
 .field-hint code {
   font-family: var(--font-mono);
