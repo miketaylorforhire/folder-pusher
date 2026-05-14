@@ -469,7 +469,7 @@ function dismissUpdate(): void {
           class="profile-select"
           :value="selectedProfile"
           @change="loadProfile(($event.target as HTMLSelectElement).value)"
-          :disabled="running"
+          :disabled="running || probing"
         >
           <option value="">— none —</option>
           <option v-for="p in profiles" :key="p.name" :value="p.name">
@@ -479,14 +479,14 @@ function dismissUpdate(): void {
         <button
           class="secondary-button"
           @click="showSaveForm = !showSaveForm"
-          :disabled="running"
+          :disabled="running || probing"
         >
           Save as…
         </button>
         <button
           class="secondary-button danger"
           @click="removeProfile"
-          :disabled="!selectedProfile || running"
+          :disabled="!selectedProfile || running || probing"
         >
           Delete
         </button>
@@ -516,10 +516,10 @@ function dismissUpdate(): void {
             v-model="src"
             @blur="onProbeBlur"
             placeholder="\\HOST\share\path\to\folder"
-            :disabled="running"
+            :disabled="running || probing"
             spellcheck="false"
           />
-          <button class="secondary-button browse-button" @click="pickSource" :disabled="running">
+          <button class="secondary-button browse-button" @click="pickSource" :disabled="running || probing">
             Browse…
           </button>
         </div>
@@ -539,7 +539,7 @@ function dismissUpdate(): void {
           class="field-input mono"
           v-model="template"
           placeholder="\\{machine}\Users\Public\Music\"
-          :disabled="running"
+          :disabled="running || probing"
           spellcheck="false"
         />
         <p class="field-hint">
@@ -549,7 +549,7 @@ function dismissUpdate(): void {
           <input
             type="checkbox"
             :checked="autoFillTemplate"
-            :disabled="running"
+            :disabled="running || probing"
             @change="setAutoFillTemplate(($event.target as HTMLInputElement).checked)"
           />
           <span>Auto-fill this template from the source folder when I Browse</span>
@@ -560,7 +560,7 @@ function dismissUpdate(): void {
         <label class="field-label">Destinations</label>
         <div
           class="chip-input"
-          :class="{ disabled: running || destinations.length >= MAX_DESTINATIONS }"
+          :class="{ disabled: running || probing || destinations.length >= MAX_DESTINATIONS }"
           @click="focusChipInput"
         >
           <span
@@ -574,7 +574,7 @@ function dismissUpdate(): void {
               type="button"
               aria-label="Remove"
               @click.stop="removeChip(i)"
-              :disabled="running"
+              :disabled="running || probing"
             >×</button>
           </span>
           <input
@@ -585,7 +585,7 @@ function dismissUpdate(): void {
             @keydown="onChipKeydown"
             @blur="commitDraft"
             @paste="onChipPaste"
-            :disabled="running || destinations.length >= MAX_DESTINATIONS"
+            :disabled="running || probing || destinations.length >= MAX_DESTINATIONS"
             spellcheck="false"
             autocapitalize="off"
             autocomplete="off"
