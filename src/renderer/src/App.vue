@@ -523,7 +523,9 @@ function dismissUpdate(): void {
             Browse…
           </button>
         </div>
-        <p class="field-hint" v-if="probing">Checking…</p>
+        <p class="field-hint checking" v-if="probing">
+          <span class="spinner" aria-hidden="true"></span>Checking…
+        </p>
         <p class="field-hint ok" v-else-if="probe?.exists">{{ sizeLabel }}</p>
         <p class="field-hint error" v-else-if="probe && !probe.exists">
           Not reachable<span v-if="probe.error">: {{ probe.error }}</span>
@@ -1116,6 +1118,27 @@ input, textarea, select { font: inherit; color: inherit; }
 
 .field-hint.ok { color: var(--success); }
 .field-hint.error { color: var(--error); }
+
+.field-hint.checking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 .toggle-row {
   display: flex;
