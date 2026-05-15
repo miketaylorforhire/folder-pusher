@@ -4,6 +4,7 @@ import titleUrl from '../../../title.svg?url'
 
 type RowStatus = 'queued' | 'running' | 'ok' | 'failed'
 type ThemeName = 'console' | 'hardware'
+type SourceType = 'folder' | 'file'
 
 interface Row {
   machine: string
@@ -18,6 +19,7 @@ interface Row {
 
 interface ProbeResult {
   exists: boolean
+  kind?: SourceType
   files: number
   bytes: number
   error?: string
@@ -28,6 +30,7 @@ interface Profile {
   src: string
   template: string
   destinations: string
+  sourceType?: SourceType
   updatedAt: string
 }
 
@@ -52,6 +55,7 @@ const themes: { id: ThemeName; label: string }[] = [
 const theme = ref<ThemeName>('hardware')
 const autoFillTemplate = ref(true)
 const src = ref('')
+const sourceType = ref<SourceType>('folder')
 const template = ref('\\\\{machine}\\Users\\Public\\Music')
 const destinations = ref<string[]>([])
 const chipDraft = ref('')
@@ -82,8 +86,21 @@ const canCopy = computed(
     probe.value?.exists === true
 )
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v.toFixed(1)} ${units[i]}`
+}
+
 const sizeLabel = computed(() => {
   if (!probe.value?.exists) return ''
+  if (probe.value.kind === 'file') return formatBytes(probe.value.bytes)
   const gb = probe.value.bytes / (1024 * 1024 * 1024)
   return `${gb.toFixed(1)} GB · ${probe.value.files.toLocaleString()} files`
 })
@@ -110,6 +127,17 @@ function setAutoFillTemplate(on: boolean): void {
 function setSelectedProfile(name: string): void {
   selectedProfile.value = name
   localStorage.setItem(STORAGE_KEY_PROFILE, name)
+}
+
+// Switching the source type starts a fresh selection: the old path almost
+// certainly doesn't match the new type, so clear it rather than leave a
+// folder path sitting under a "File" label. Any path that arrives afterward
+// (typed, pasted, profile, or hand-off) re-corrects this toggle via the probe.
+function setSourceType(t: SourceType): void {
+  if (sourceType.value === t) return
+  sourceType.value = t
+  src.value = ''
+  probe.value = null
 }
 
 function showConfirm(opts: Omit<ConfirmState, 'resolve'>): Promise<boolean> {
@@ -139,6 +167,12 @@ async function onProbeBlur(): Promise<void> {
   probing.value = true
   try {
     probe.value = await window.api.probeSource(src.value.trim())
+    // Auto-correct the Folder/File toggle to whatever the path actually is on
+    // disk. Keeps the toggle honest for typed, pasted, and profile-loaded
+    // paths without forcing the user to flip it themselves.
+    if (probe.value?.exists && probe.value.kind) {
+      sourceType.value = probe.value.kind
+    }
   } finally {
     probing.value = false
   }
@@ -174,7 +208,7 @@ async function applySource(path: string): Promise<void> {
 }
 
 async function pickSource(): Promise<void> {
-  const picked = await window.api.pickSource(src.value.trim() || undefined)
+  const picked = await window.api.pickSource(src.value.trim() || undefined, sourceType.value)
   if (!picked) return
   await applySource(picked)
 }
@@ -235,6 +269,7 @@ async function loadProfile(name: string): Promise<void> {
   if (!p) return
   src.value = p.src
   template.value = p.template
+  sourceType.value = p.sourceType ?? 'folder'
   destinations.value = p.destinations
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -259,6 +294,7 @@ async function saveProfileAs(): Promise<void> {
     name,
     src: src.value,
     template: template.value,
+    sourceType: sourceType.value,
     destinations: destinations.value.join('\n')
   })
   setSelectedProfile(name)
@@ -371,7 +407,8 @@ async function startCopy(): Promise<void> {
     await window.api.startCopy({
       src: src.value.trim(),
       template: template.value.trim(),
-      machines: [...machines.value]
+      machines: [...machines.value],
+      sourceType: sourceType.value
     })
   } finally {
     running.value = false
@@ -509,13 +546,35 @@ function dismissUpdate(): void {
       </div>
 
       <section class="field">
-        <label class="field-label">Source folder</label>
+        <div class="field-label-row">
+          <label class="field-label">{{ sourceType === 'file' ? 'Source file' : 'Source folder' }}</label>
+          <div class="theme-switcher" role="tablist" aria-label="Source type">
+            <button
+              :class="{ active: sourceType === 'folder' }"
+              @click="setSourceType('folder')"
+              :disabled="running || probing"
+              role="tab"
+              :aria-selected="sourceType === 'folder'"
+            >
+              Folder
+            </button>
+            <button
+              :class="{ active: sourceType === 'file' }"
+              @click="setSourceType('file')"
+              :disabled="running || probing"
+              role="tab"
+              :aria-selected="sourceType === 'file'"
+            >
+              File
+            </button>
+          </div>
+        </div>
         <div class="field-with-action">
           <input
             class="field-input mono"
             v-model="src"
             @blur="onProbeBlur"
-            placeholder="\\HOST\share\path\to\folder"
+            :placeholder="sourceType === 'file' ? '\\\\HOST\\share\\path\\to\\file.ext' : '\\\\HOST\\share\\path\\to\\folder'"
             :disabled="running || probing"
             spellcheck="false"
           />
@@ -543,7 +602,8 @@ function dismissUpdate(): void {
           spellcheck="false"
         />
         <p class="field-hint">
-          Use <code>{machine}</code> as the placeholder. The source folder name is appended automatically.
+          Use <code>{machine}</code> as the placeholder. The source
+          {{ sourceType === 'file' ? 'file' : 'folder' }} name is appended automatically.
         </p>
         <label class="toggle-row">
           <input
@@ -1042,6 +1102,16 @@ input, textarea, select { font: inherit; color: inherit; }
 
 [data-theme="hardware"] .field-label::before { content: '[ '; color: var(--accent); }
 [data-theme="hardware"] .field-label::after { content: ' ]'; color: var(--accent); }
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.field-label-row .field-label { margin-bottom: 0; }
 
 .field-with-action {
   display: flex;

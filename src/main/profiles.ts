@@ -7,6 +7,9 @@ export interface Profile {
   src: string
   template: string
   destinations: string
+  // 'folder' (default) or 'file'. Absent on profiles saved before the
+  // Folder/File toggle existed — those are treated as folder sources.
+  sourceType?: 'folder' | 'file'
   updatedAt: string
 }
 

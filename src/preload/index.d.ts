@@ -7,8 +7,11 @@ export interface CopyResult {
   error?: string
 }
 
+export type SourceType = 'folder' | 'file'
+
 export interface ProbeResult {
   exists: boolean
+  kind?: SourceType
   files: number
   bytes: number
   error?: string
@@ -19,16 +22,18 @@ export interface Profile {
   src: string
   template: string
   destinations: string
+  sourceType?: SourceType
   updatedAt: string
 }
 
 export interface Api {
   probeSource: (srcPath: string) => Promise<ProbeResult>
-  pickSource: (currentPath?: string) => Promise<string | null>
+  pickSource: (currentPath?: string, sourceType?: SourceType) => Promise<string | null>
   startCopy: (job: {
     src: string
     template: string
     machines: string[]
+    sourceType: SourceType
   }) => Promise<{ ok: boolean; error?: string; cancelled?: boolean }>
   cancelCopy: () => Promise<void>
   onCopyStatus: (cb: (data: { machine: string; status: 'running' }) => void) => () => void

@@ -99,16 +99,24 @@ function createWindow(): void {
   }
 }
 
+type SourceType = 'folder' | 'file'
+
+// Probe a source path. Auto-detects whether it's a file or a folder and
+// reports `kind` so the renderer can sync its Folder/File toggle to match.
 async function probeSource(srcPath: string): Promise<{
   exists: boolean
+  kind?: SourceType
   files: number
   bytes: number
   error?: string
 }> {
   try {
     const s = await stat(srcPath)
+    if (s.isFile()) {
+      return { exists: true, kind: 'file', files: 1, bytes: s.size }
+    }
     if (!s.isDirectory()) {
-      return { exists: false, files: 0, bytes: 0, error: 'Path is not a directory' }
+      return { exists: false, files: 0, bytes: 0, error: 'Path is not a file or folder' }
     }
     let files = 0
     let bytes = 0
@@ -125,17 +133,21 @@ async function probeSource(srcPath: string): Promise<{
       }
     }
     await walk(srcPath)
-    return { exists: true, files, bytes }
+    return { exists: true, kind: 'folder', files, bytes }
   } catch (err) {
     return { exists: false, files: 0, bytes: 0, error: (err as Error).message }
   }
 }
 
-async function pickSourceFolder(defaultPath?: string): Promise<string | null> {
+async function pickSource(
+  defaultPath: string | undefined,
+  sourceType: SourceType
+): Promise<string | null> {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory', 'treatPackageAsDirectory'],
-    title: 'Select source folder',
+    properties:
+      sourceType === 'file' ? ['openFile'] : ['openDirectory', 'treatPackageAsDirectory'],
+    title: sourceType === 'file' ? 'Select source file' : 'Select source folder',
     defaultPath: defaultPath || undefined
   })
   if (result.canceled || !result.filePaths.length) return null
@@ -146,6 +158,7 @@ interface CopyJob {
   src: string
   template: string
   machines: string[]
+  sourceType?: SourceType
 }
 
 interface CopyResult {
@@ -186,6 +199,126 @@ function emit(machine: string, text: string): void {
   mainWindow?.webContents.send('copy:line', { machine, text })
 }
 
+type FileOutcome = 'copied' | 'skipped' | 'failed'
+
+// Copy a single file with the newer-wins decision. `relLabel` is what shows in
+// the per-machine log (a relative path for folder copies, a bare filename for
+// file copies). Failures are pushed onto `errors` and reported as 'failed'.
+async function copyOneFile(
+  srcFile: string,
+  dstFile: string,
+  relLabel: string,
+  machine: string,
+  errors: string[]
+): Promise<FileOutcome> {
+  let srcStat
+  try {
+    srcStat = await stat(srcFile)
+  } catch (err) {
+    emit(machine, `[error] stat src ${relLabel}: ${(err as Error).message}\r\n`)
+    errors.push(`${relLabel}: ${(err as Error).message}`)
+    return 'failed'
+  }
+
+  let dstStat
+  try {
+    dstStat = await stat(dstFile)
+  } catch {
+    dstStat = null
+  }
+
+  // Decide whether to copy.
+  // Rule: size differs ⇒ content differs ⇒ copy (regardless of mtime).
+  //       size matches  ⇒ trust mtime: src newer copies, src older skips.
+  // We don't rely on mtime alone because a file dropped into the source via
+  // a tool that preserved the origin mtime can be "older than dest" by
+  // filesystem time but obviously different by content (different size).
+  let action: 'copy' | 'skip'
+  let reason: string
+  if (!dstStat) {
+    action = 'copy'
+    reason = 'new'
+  } else if (srcStat.size !== dstStat.size) {
+    action = 'copy'
+    reason = `size differs (${dstStat.size} -> ${srcStat.size} bytes)`
+  } else {
+    const dtime = srcStat.mtimeMs - dstStat.mtimeMs
+    if (Math.abs(dtime) <= MTIME_TOLERANCE_MS) {
+      action = 'skip'
+      reason = 'same'
+    } else if (dtime > 0) {
+      action = 'copy'
+      reason = `newer (src ${srcStat.mtime.toISOString()} > dst ${dstStat.mtime.toISOString()})`
+    } else {
+      action = 'skip'
+      reason = `older (src ${srcStat.mtime.toISOString()} < dst ${dstStat.mtime.toISOString()})`
+    }
+  }
+
+  if (action === 'skip') {
+    emit(machine, `[skip ${reason}] ${relLabel}\r\n`)
+    return 'skipped'
+  }
+
+  // Ensure parent dir exists.
+  try {
+    await mkdir(dirname(dstFile), { recursive: true })
+  } catch (err) {
+    emit(machine, `[error] mkdir ${dirname(relLabel)}: ${(err as Error).message}\r\n`)
+    errors.push(`${relLabel}: ${(err as Error).message}`)
+    return 'failed'
+  }
+
+  // If destination exists, clear read-only attribute so copyFile can overwrite.
+  if (dstStat) {
+    try {
+      await chmod(dstFile, 0o666)
+    } catch {
+      // best-effort; copyFile will fail clearly if it really can't write
+    }
+  }
+
+  try {
+    await copyFile(srcFile, dstFile)
+    // Preserve source mtime/atime on the destination — fs.copyFile doesn't
+    // do this, so without utimes the dest gets mtime=now and the dest file's
+    // metadata no longer matches the source it came from.
+    try {
+      await utimes(dstFile, srcStat.atime, srcStat.mtime)
+    } catch (err) {
+      emit(machine, `[warn] utimes ${relLabel}: ${(err as Error).message}\r\n`)
+    }
+    emit(machine, `[copy ${reason}] ${relLabel}\r\n`)
+    return 'copied'
+  } catch (err) {
+    emit(machine, `[error] copy ${relLabel}: ${(err as Error).message}\r\n`)
+    errors.push(`${relLabel}: ${(err as Error).message}`)
+    return 'failed'
+  }
+}
+
+function summarize(
+  machine: string,
+  start: number,
+  copied: number,
+  skipped: number,
+  failed: number,
+  errors: string[]
+): CopyResult {
+  const elapsedSeconds = Math.round((Date.now() - start) / 1000)
+  emit(machine, `\r\n[done — copied ${copied}, skipped ${skipped}, failed ${failed}, ${elapsedSeconds}s]\r\n`)
+  return {
+    machine,
+    status: failed > 0 ? 'failed' : 'ok',
+    exitCode: failed,
+    newFiles: copied,
+    elapsedSeconds,
+    error: errors.length
+      ? errors.slice(0, 3).join('; ') + (errors.length > 3 ? ` (+${errors.length - 3} more)` : '')
+      : undefined
+  }
+}
+
 async function runCopyForMachine(src: string, dst: string, machine: string): Promise<CopyResult> {
   const start = Date.now()
   emit(machine, `> node-copy "${src}" -> "${dst}"\r\n`)
@@ -221,127 +354,82 @@ async function runCopyForMachine(src: string, dst: string, machine: string): Pro
         error: 'Cancelled by user.'
       }
     }
+    const outcome = await copyOneFile(join(src, relPath), join(dst, relPath), relPath, machine, errors)
+    if (outcome === 'copied') copied++
+    else if (outcome === 'skipped') skipped++
+    else failed++
+  }
 
-    const srcFile = join(src, relPath)
-    const dstFile = join(dst, relPath)
+  return summarize(machine, start, copied, skipped, failed, errors)
+}
 
-    let srcStat
-    try {
-      srcStat = await stat(srcFile)
-    } catch (err) {
-      emit(machine, `[error] stat src ${relPath}: ${(err as Error).message}\r\n`)
-      failed++
-      errors.push(`${relPath}: ${(err as Error).message}`)
-      continue
-    }
+// Copy a single source file into `dstDir` (the machine-substituted template),
+// keeping its filename. The folder path's leaf is appended by the caller; for
+// a file copy the file itself is the leaf.
+async function runCopyForFile(srcFile: string, dstDir: string, machine: string): Promise<CopyResult> {
+  const start = Date.now()
+  const name = basename(srcFile)
+  const dstFile = join(dstDir, name)
+  emit(machine, `> node-copy "${srcFile}" -> "${dstFile}"\r\n`)
 
-    let dstStat
-    try {
-      dstStat = await stat(dstFile)
-    } catch {
-      dstStat = null
-    }
-
-    // Decide whether to copy.
-    // Rule: size differs ⇒ content differs ⇒ copy (regardless of mtime).
-    //       size matches  ⇒ trust mtime: src newer copies, src older skips.
-    // We don't rely on mtime alone because a file dropped into the source via
-    // a tool that preserved the origin mtime can be "older than dest" by
-    // filesystem time but obviously different by content (different size).
-    let action: 'copy' | 'skip'
-    let reason: string
-    if (!dstStat) {
-      action = 'copy'
-      reason = 'new'
-    } else if (srcStat.size !== dstStat.size) {
-      action = 'copy'
-      reason = `size differs (${dstStat.size} -> ${srcStat.size} bytes)`
-    } else {
-      const dtime = srcStat.mtimeMs - dstStat.mtimeMs
-      if (Math.abs(dtime) <= MTIME_TOLERANCE_MS) {
-        action = 'skip'
-        reason = 'same'
-      } else if (dtime > 0) {
-        action = 'copy'
-        reason = `newer (src ${srcStat.mtime.toISOString()} > dst ${dstStat.mtime.toISOString()})`
-      } else {
-        action = 'skip'
-        reason = `older (src ${srcStat.mtime.toISOString()} < dst ${dstStat.mtime.toISOString()})`
-      }
-    }
-
-    if (action === 'skip') {
-      emit(machine, `[skip ${reason}] ${relPath}\r\n`)
-      skipped++
-      continue
-    }
-
-    // Ensure parent dir exists.
-    try {
-      await mkdir(dirname(dstFile), { recursive: true })
-    } catch (err) {
-      emit(machine, `[error] mkdir ${dirname(relPath)}: ${(err as Error).message}\r\n`)
-      failed++
-      errors.push(`${relPath}: ${(err as Error).message}`)
-      continue
-    }
-
-    // If destination exists, clear read-only attribute so copyFile can overwrite.
-    if (dstStat) {
-      try {
-        await chmod(dstFile, 0o666)
-      } catch {
-        // best-effort; copyFile will fail clearly if it really can't write
-      }
-    }
-
-    try {
-      await copyFile(srcFile, dstFile)
-      // Preserve source mtime/atime on the destination — fs.copyFile doesn't
-      // do this, so without utimes the dest gets mtime=now and the dest file's
-      // metadata no longer matches the source it came from.
-      try {
-        await utimes(dstFile, srcStat.atime, srcStat.mtime)
-      } catch (err) {
-        emit(machine, `[warn] utimes ${relPath}: ${(err as Error).message}\r\n`)
-      }
-      emit(machine, `[copy ${reason}] ${relPath}\r\n`)
-      copied++
-    } catch (err) {
-      emit(machine, `[error] copy ${relPath}: ${(err as Error).message}\r\n`)
-      failed++
-      errors.push(`${relPath}: ${(err as Error).message}`)
+  if (cancelRequested) {
+    emit(machine, '[cancelled]\r\n')
+    return {
+      machine,
+      status: 'failed',
+      exitCode: -1,
+      newFiles: 0,
+      elapsedSeconds: 0,
+      error: 'Cancelled by user.'
     }
   }
 
-  const elapsedSeconds = Math.round((Date.now() - start) / 1000)
-  const status: 'ok' | 'failed' = failed > 0 ? 'failed' : 'ok'
-  emit(machine, `\r\n[done — copied ${copied}, skipped ${skipped}, failed ${failed}, ${elapsedSeconds}s]\r\n`)
-  return {
+  try {
+    await mkdir(dstDir, { recursive: true })
+  } catch (err) {
+    emit(machine, `[error] mkdir dest: ${(err as Error).message}\r\n`)
+    return {
+      machine,
+      status: 'failed',
+      exitCode: -1,
+      newFiles: 0,
+      elapsedSeconds: Math.round((Date.now() - start) / 1000),
+      error: `Failed to create destination: ${(err as Error).message}`
+    }
+  }
+
+  const errors: string[] = []
+  const outcome = await copyOneFile(srcFile, dstFile, name, machine, errors)
+  return summarize(
     machine,
-    status,
-    exitCode: failed,
-    newFiles: copied,
-    elapsedSeconds,
-    error: errors.length ? errors.slice(0, 3).join('; ') + (errors.length > 3 ? ` (+${errors.length - 3} more)` : '') : undefined
-  }
+    start,
+    outcome === 'copied' ? 1 : 0,
+    outcome === 'skipped' ? 1 : 0,
+    outcome === 'failed' ? 1 : 0,
+    errors
+  )
 }
 
 ipcMain.handle('source:probe', (_e, srcPath: string) => probeSource(srcPath))
-ipcMain.handle('source:pick', (_e, currentPath?: string) => pickSourceFolder(currentPath))
+ipcMain.handle('source:pick', (_e, currentPath: string | undefined, sourceType?: SourceType) =>
+  pickSource(currentPath, sourceType ?? 'folder')
+)
 
 ipcMain.handle('copy:start', async (_e, job: CopyJob) => {
   if (activeJob) return { ok: false, error: 'A copy job is already running' }
   activeJob = true
   cancelRequested = false
   try {
-    const folderName = basename(job.src)
+    const sourceType: SourceType = job.sourceType ?? 'folder'
+    const leafName = basename(job.src)
     for (const machine of job.machines) {
       if (cancelRequested) break
       mainWindow?.webContents.send('copy:status', { machine, status: 'running' })
       const dstBase = job.template.replace(/\{machine\}/g, machine)
-      const dst = join(dstBase, folderName)
-      const result = await runCopyForMachine(job.src, dst, machine)
+      const result =
+        sourceType === 'file'
+          ? await runCopyForFile(job.src, dstBase, machine)
+          : await runCopyForMachine(job.src, join(dstBase, leafName), machine)
       mainWindow?.webContents.send('copy:result', result)
     }
     return { ok: true, cancelled: cancelRequested }

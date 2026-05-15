@@ -9,20 +9,27 @@ interface CopyResult {
   error?: string
 }
 
+type SourceType = 'folder' | 'file'
+
 interface Profile {
   name: string
   src: string
   template: string
   destinations: string
+  sourceType?: SourceType
   updatedAt: string
 }
 
 const api = {
   probeSource: (srcPath: string) => ipcRenderer.invoke('source:probe', srcPath),
-  pickSource: (currentPath?: string): Promise<string | null> =>
-    ipcRenderer.invoke('source:pick', currentPath),
-  startCopy: (job: { src: string; template: string; machines: string[] }) =>
-    ipcRenderer.invoke('copy:start', job),
+  pickSource: (currentPath?: string, sourceType: SourceType = 'folder'): Promise<string | null> =>
+    ipcRenderer.invoke('source:pick', currentPath, sourceType),
+  startCopy: (job: {
+    src: string
+    template: string
+    machines: string[]
+    sourceType: SourceType
+  }) => ipcRenderer.invoke('copy:start', job),
   cancelCopy: (): Promise<void> => ipcRenderer.invoke('copy:cancel'),
   onCopyStatus: (cb: (data: { machine: string; status: 'running' }) => void) => {
     const listener = (_e: unknown, data: { machine: string; status: 'running' }) => cb(data)
