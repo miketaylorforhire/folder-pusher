@@ -34,7 +34,12 @@ export interface Api {
     template: string
     machines: string[]
     sourceType: SourceType
-  }) => Promise<{ ok: boolean; error?: string; cancelled?: boolean }>
+  }) => Promise<{
+    ok: boolean
+    error?: string
+    cancelled?: boolean
+    results?: CopyResult[]
+  }>
   cancelCopy: () => Promise<void>
   onCopyStatus: (cb: (data: { machine: string; status: 'running' }) => void) => () => void
   onCopyResult: (cb: (data: CopyResult) => void) => () => void

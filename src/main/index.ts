@@ -419,6 +419,11 @@ ipcMain.handle('copy:start', async (_e, job: CopyJob) => {
   if (activeJob) return { ok: false, error: 'A copy job is already running' }
   activeJob = true
   cancelRequested = false
+  // Accumulate the per-machine results and return them in the response. The
+  // renderer used to count statuses off its `rows` array after the await, but
+  // the final `copy:result` event isn't guaranteed to land before the IPC
+  // return resolves — leaving the last machine stuck at 'running'.
+  const results: CopyResult[] = []
   try {
     const sourceType: SourceType = job.sourceType ?? 'folder'
     const leafName = basename(job.src)
@@ -430,9 +435,10 @@ ipcMain.handle('copy:start', async (_e, job: CopyJob) => {
         sourceType === 'file'
           ? await runCopyForFile(job.src, dstBase, machine)
           : await runCopyForMachine(job.src, join(dstBase, leafName), machine)
+      results.push(result)
       mainWindow?.webContents.send('copy:result', result)
     }
-    return { ok: true, cancelled: cancelRequested }
+    return { ok: true, cancelled: cancelRequested, results }
   } finally {
     activeJob = false
   }

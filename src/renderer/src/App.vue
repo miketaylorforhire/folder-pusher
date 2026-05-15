@@ -434,6 +434,7 @@ async function startCopy(): Promise<void> {
   }))
   running.value = true
   let cancelled = false
+  let ipcResults: Array<{ machine: string; status: 'ok' | 'failed' }> = []
   try {
     const result = await window.api.startCopy({
       src: src.value.trim(),
@@ -442,17 +443,19 @@ async function startCopy(): Promise<void> {
       sourceType: sourceType.value
     })
     cancelled = result?.cancelled === true
+    ipcResults = result?.results ?? []
   } finally {
     running.value = false
   }
-  // Inform the user of the per-machine outcome. Dismissing the modal clears
-  // the progress panel — the rows have done their job once seen.
+  // Inform the user of the per-machine outcome. Source of truth is the IPC
+  // response from main — `rows` may still have a stale 'running' entry if the
+  // last copy:result event hasn't drained from the renderer queue yet.
   if (rows.value.length) {
-    const failedRows = rows.value.filter((r) => r.status === 'failed')
+    const failedResults = ipcResults.filter((r) => r.status !== 'ok')
     resultsDialog.value = {
-      ok: rows.value.filter((r) => r.status === 'ok').length,
-      failed: failedRows.length,
-      failedMachines: failedRows.map((r) => r.machine),
+      ok: ipcResults.filter((r) => r.status === 'ok').length,
+      failed: failedResults.length,
+      failedMachines: failedResults.map((r) => r.machine),
       total: rows.value.length,
       cancelled
     }
