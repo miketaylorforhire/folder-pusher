@@ -45,6 +45,7 @@ interface ConfirmState {
 interface ResultsState {
   ok: number
   failed: number
+  failedMachines: string[]
   total: number
   cancelled: boolean
 }
@@ -447,9 +448,11 @@ async function startCopy(): Promise<void> {
   // Inform the user of the per-machine outcome. Dismissing the modal clears
   // the progress panel — the rows have done their job once seen.
   if (rows.value.length) {
+    const failedRows = rows.value.filter((r) => r.status === 'failed')
     resultsDialog.value = {
       ok: rows.value.filter((r) => r.status === 'ok').length,
-      failed: rows.value.filter((r) => r.status === 'failed').length,
+      failed: failedRows.length,
+      failedMachines: failedRows.map((r) => r.machine),
       total: rows.value.length,
       cancelled
     }
@@ -860,7 +863,9 @@ function dismissUpdate(): void {
             </template>
             <template v-else>
               {{ resultsDialog.ok }} of {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }} completed successfully.
-              <span v-if="resultsDialog.failed > 0">{{ resultsDialog.failed }} failed.</span>
+              <span v-if="resultsDialog.failed > 0">
+                Failed: {{ resultsDialog.failedMachines.join(', ') }}.
+              </span>
             </template>
           </p>
           <footer class="modal-actions">
