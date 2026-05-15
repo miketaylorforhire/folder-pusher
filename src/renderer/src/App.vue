@@ -42,6 +42,13 @@ interface ConfirmState {
   resolve: (value: boolean) => void
 }
 
+interface ResultsState {
+  ok: number
+  failed: number
+  total: number
+  cancelled: boolean
+}
+
 const STORAGE_KEY_THEME = 'folderpusher.theme'
 const STORAGE_KEY_AUTOFILL = 'folderpusher.autofillTemplate'
 const STORAGE_KEY_PROFILE = 'folderpusher.selectedProfile'
@@ -72,6 +79,9 @@ const newProfileName = ref('')
 
 const confirmDialog = ref<ConfirmState | null>(null)
 const confirmButtonEl = ref<HTMLButtonElement | null>(null)
+
+const resultsDialog = ref<ResultsState | null>(null)
+const resultsButtonEl = ref<HTMLButtonElement | null>(null)
 
 const isPackaged = ref(false)
 
@@ -152,10 +162,24 @@ function handleConfirm(yes: boolean): void {
   confirmDialog.value = null
 }
 
+// Dismiss the results modal AND clear the progress panel. The user has been
+// informed of the per-machine outcome; the rows have done their job.
+function closeResults(): void {
+  resultsDialog.value = null
+  rows.value = []
+}
+
 watch(confirmDialog, async (val) => {
   if (val) {
     await nextTick()
     confirmButtonEl.value?.focus()
+  }
+})
+
+watch(resultsDialog, async (val) => {
+  if (val) {
+    await nextTick()
+    resultsButtonEl.value?.focus()
   }
 })
 
@@ -324,8 +348,13 @@ function statusLabel(s: RowStatus): string {
 }
 
 function onGlobalKeydown(e: KeyboardEvent): void {
-  if (!confirmDialog.value) return
-  if (e.key === 'Escape') {
+  if (e.key !== 'Escape') return
+  if (resultsDialog.value) {
+    e.preventDefault()
+    closeResults()
+    return
+  }
+  if (confirmDialog.value) {
     e.preventDefault()
     handleConfirm(false)
   }
@@ -403,15 +432,27 @@ async function startCopy(): Promise<void> {
     showLog: false
   }))
   running.value = true
+  let cancelled = false
   try {
-    await window.api.startCopy({
+    const result = await window.api.startCopy({
       src: src.value.trim(),
       template: template.value.trim(),
       machines: [...machines.value],
       sourceType: sourceType.value
     })
+    cancelled = result?.cancelled === true
   } finally {
     running.value = false
+  }
+  // Inform the user of the per-machine outcome. Dismissing the modal clears
+  // the progress panel — the rows have done their job once seen.
+  if (rows.value.length) {
+    resultsDialog.value = {
+      ok: rows.value.filter((r) => r.status === 'ok').length,
+      failed: rows.value.filter((r) => r.status === 'failed').length,
+      total: rows.value.length,
+      cancelled
+    }
   }
 }
 
@@ -795,6 +836,40 @@ function dismissUpdate(): void {
               @click="installUpdate"
             >
               Install
+            </button>
+          </footer>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div
+        v-if="resultsDialog"
+        class="modal-backdrop"
+        @mousedown.self="closeResults"
+      >
+        <div class="modal" role="dialog" aria-modal="true">
+          <header class="modal-header">
+            <h2 class="modal-title">
+              {{ resultsDialog.cancelled ? 'Copy cancelled' : 'Copy complete' }}
+            </h2>
+          </header>
+          <p class="modal-message">
+            <template v-if="resultsDialog.failed === 0 && resultsDialog.ok === resultsDialog.total">
+              Copied to all {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }}.
+            </template>
+            <template v-else>
+              {{ resultsDialog.ok }} of {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }} completed successfully.
+              <span v-if="resultsDialog.failed > 0">{{ resultsDialog.failed }} failed.</span>
+            </template>
+          </p>
+          <footer class="modal-actions">
+            <button
+              ref="resultsButtonEl"
+              class="primary-button compact"
+              @click="closeResults"
+            >
+              OK
             </button>
           </footer>
         </div>
