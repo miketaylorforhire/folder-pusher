@@ -894,6 +894,37 @@ button { cursor: pointer; border: none; background: none; font: inherit; color: 
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 input, textarea, select { font: inherit; color: inherit; }
 
+/* Scrollbars stay out of the way: the track has no chrome, the thumb is
+   invisible until the user actually reaches for the scroll area. Chromium
+   only shows the scrollbar when content overflows, so when nothing's there
+   to scroll, the right edge is clean. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.18s ease;
+}
+body:hover::-webkit-scrollbar-thumb,
+.progress-log:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32);
+  background-clip: padding-box;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+body:hover, .progress-log:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
 /* ────────────────────────────────────────────────────────────
    THEME: console — operator's terminal
    ──────────────────────────────────────────────────────────── */
