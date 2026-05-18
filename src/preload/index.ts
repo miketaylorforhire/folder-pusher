@@ -60,6 +60,12 @@ const api = {
     ipcRenderer.on('source:external', listener)
     return () => ipcRenderer.removeListener('source:external', listener)
   },
+  onCloseAttempt: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('app:close-attempt', listener)
+    return () => ipcRenderer.removeListener('app:close-attempt', listener)
+  },
+  confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirm-close'),
   update: {
     check: () => ipcRenderer.invoke('update:check'),
     install: (url: string) => ipcRenderer.invoke('update:install', url)

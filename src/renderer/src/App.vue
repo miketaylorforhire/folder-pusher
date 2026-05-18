@@ -365,6 +365,7 @@ let unsubStatus: (() => void) | null = null
 let unsubResult: (() => void) | null = null
 let unsubLine: (() => void) | null = null
 let unsubExternalSource: (() => void) | null = null
+let unsubCloseAttempt: (() => void) | null = null
 
 onMounted(async () => {
   document.addEventListener('keydown', onGlobalKeydown)
@@ -407,6 +408,18 @@ onMounted(async () => {
   unsubExternalSource = window.api.onExternalSource((path) => {
     applySource(path)
   })
+  // Main blocks the window close while a copy job is running and pings us
+  // here. Themed confirm; on yes, tell main to cancel the job and proceed.
+  unsubCloseAttempt = window.api.onCloseAttempt(async () => {
+    const ok = await showConfirm({
+      title: 'Copy in progress',
+      message:
+        "A copy job is still running. Quitting now will leave the file being written truncated, and remaining machines won't be attempted. The truncated file gets re-copied automatically next time, but you'll lose progress.",
+      confirmLabel: 'Quit anyway',
+      destructive: true
+    })
+    if (ok) await window.api.confirmClose()
+  })
   // A source folder passed at launch (e.g. from WhoPlayedThat's export button)
   // when FolderPusher was started cold rather than already running.
   const launchSource = await window.api.getLaunchSource()
@@ -421,6 +434,7 @@ onUnmounted(() => {
   unsubResult?.()
   unsubLine?.()
   unsubExternalSource?.()
+  unsubCloseAttempt?.()
 })
 
 async function startCopy(): Promise<void> {

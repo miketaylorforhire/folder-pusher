@@ -96,31 +96,13 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('moved', saveWindowState)
   // Gate the close while a copy job is running: closing now would kill the
-  // in-flight copyFile mid-write and truncate the destination file. Native
-  // dialog so it works even if the renderer is hung.
+  // in-flight copyFile mid-write and truncate the destination file. The
+  // confirmation is the renderer's themed modal (consistent with the rest of
+  // the app); main just blocks the close and pings the renderer to ask.
   mainWindow.on('close', (e) => {
     if (activeJob && !forceQuit) {
       e.preventDefault()
-      const win = mainWindow
-      if (!win) return
-      dialog
-        .showMessageBox(win, {
-          type: 'warning',
-          buttons: ['Keep copying', 'Quit anyway'],
-          defaultId: 0,
-          cancelId: 0,
-          title: 'Copy in progress',
-          message: 'A copy job is still running.',
-          detail:
-            "Quitting now will leave the file being written truncated, and remaining machines won't be attempted. (The truncated file gets re-copied automatically next time, but you'll lose progress.)"
-        })
-        .then(({ response }) => {
-          if (response === 1) {
-            cancelRequested = true
-            forceQuit = true
-            mainWindow?.close()
-          }
-        })
+      mainWindow?.webContents.send('app:close-attempt')
       return
     }
     saveWindowState()
@@ -532,6 +514,14 @@ ipcMain.handle('app:get-launch-source', () => {
   const s = pendingSourceArg
   pendingSourceArg = null
   return s
+})
+
+// Renderer calls this after the user confirms the close-while-busy modal.
+// Cancel the in-flight job and let the next close event sail through.
+ipcMain.handle('app:confirm-close', () => {
+  cancelRequested = true
+  forceQuit = true
+  mainWindow?.close()
 })
 
 ipcMain.handle('app:is-packaged', () => app.isPackaged)

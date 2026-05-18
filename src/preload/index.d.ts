@@ -53,6 +53,8 @@ export interface Api {
   uninstall: () => Promise<{ ok: boolean; error?: string }>
   getLaunchSource: () => Promise<string | null>
   onExternalSource: (cb: (path: string) => void) => () => void
+  onCloseAttempt: (cb: () => void) => () => void
+  confirmClose: () => Promise<void>
   update: {
     check: () => Promise<{
       ok: boolean

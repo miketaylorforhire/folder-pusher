@@ -9,7 +9,7 @@ const APP_DISPLAY_NAME = 'FolderPusher';
 const APP_FOLDER_NAME = 'FolderPusher';
 const APP_EXE_NAME = 'FolderPusher.exe';
 const APP_USERDATA_NAME = 'folderpusher';
-const APP_VERSION = '0.1.23';
+const APP_VERSION = '0.1.24';
 const UNINSTALL_REG_KEY = 'FolderPusher';
 const SHORTCUT_NAME = 'FolderPusher.lnk';
 
