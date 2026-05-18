@@ -470,7 +470,7 @@ async function uninstallApp(): Promise<void> {
   const ok = await showConfirm({
     title: 'Uninstall FolderPusher',
     message:
-      'This will close FolderPusher and launch the uninstaller.\n\nYou’ll be asked whether to keep or delete your profiles.',
+      "This will close FolderPusher and launch the uninstaller.\n\nYou'll be asked whether to keep or delete your profiles.",
     confirmLabel: 'Uninstall',
     destructive: true
   })

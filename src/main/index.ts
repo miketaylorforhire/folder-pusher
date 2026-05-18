@@ -10,6 +10,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 let mainWindow: BrowserWindow | null = null
 
+// Set true by the close-gate after the user explicitly chooses "Quit anyway"
+// on the mid-copy warning. Lets the next 'close' event sail through instead
+// of re-prompting forever.
+let forceQuit = false
+
 // A source folder passed on the command line (e.g. by WhoPlayedThat's
 // "Export to FolderPusher" button) — captured at launch, handed to the
 // renderer once it asks for it via app:get-launch-source.
@@ -90,7 +95,36 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('moved', saveWindowState)
-  mainWindow.on('close', saveWindowState)
+  // Gate the close while a copy job is running: closing now would kill the
+  // in-flight copyFile mid-write and truncate the destination file. Native
+  // dialog so it works even if the renderer is hung.
+  mainWindow.on('close', (e) => {
+    if (activeJob && !forceQuit) {
+      e.preventDefault()
+      const win = mainWindow
+      if (!win) return
+      dialog
+        .showMessageBox(win, {
+          type: 'warning',
+          buttons: ['Keep copying', 'Quit anyway'],
+          defaultId: 0,
+          cancelId: 0,
+          title: 'Copy in progress',
+          message: 'A copy job is still running.',
+          detail:
+            "Quitting now will leave the file being written truncated, and remaining machines won't be attempted. (The truncated file gets re-copied automatically next time, but you'll lose progress.)"
+        })
+        .then(({ response }) => {
+          if (response === 1) {
+            cancelRequested = true
+            forceQuit = true
+            mainWindow?.close()
+          }
+        })
+      return
+    }
+    saveWindowState()
+  })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
