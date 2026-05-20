@@ -912,10 +912,8 @@ button { cursor: pointer; border: none; background: none; font: inherit; color: 
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 input, textarea, select { font: inherit; color: inherit; }
 
-/* Scrollbars stay out of the way: the track has no chrome, the thumb is
-   invisible until the user actually reaches for the scroll area. Chromium
-   only shows the scrollbar when content overflows, so when nothing's there
-   to scroll, the right edge is clean. */
+/* Inner scroll areas (the machine list, expanded logs) get a quiet scrollbar:
+   transparent track, thumb invisible until you reach for that area. */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner { background: transparent; }
@@ -926,7 +924,7 @@ input, textarea, select { font: inherit; color: inherit; }
   background-clip: padding-box;
   transition: background-color 0.18s ease;
 }
-body:hover::-webkit-scrollbar-thumb,
+.copy-overlay-rows:hover::-webkit-scrollbar-thumb,
 .progress-log:hover::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.18);
   background-clip: padding-box;
@@ -939,9 +937,15 @@ body:hover::-webkit-scrollbar-thumb,
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
-body:hover, .progress-log:hover {
+.copy-overlay-rows:hover, .progress-log:hover {
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
+
+/* The window is a fixed, non-resizable size and the form is meant to fit, so
+   the document never reserves a scrollbar tray on the right edge. Any hairline
+   overflow still scrolls via wheel/keys — there's just no empty gutter. */
+html, body { scrollbar-width: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; }
 
 /* ────────────────────────────────────────────────────────────
    THEME: console — operator's terminal
