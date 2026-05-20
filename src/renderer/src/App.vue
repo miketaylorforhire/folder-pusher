@@ -725,7 +725,6 @@ function dismissUpdate(): void {
 
       <div class="actions">
         <button
-          v-if="!running"
           class="primary-button"
           :disabled="!canCopy"
           @click="startCopy"
@@ -733,49 +732,7 @@ function dismissUpdate(): void {
           <span class="play-icon">▶</span>
           Copy to all
         </button>
-        <button
-          v-else
-          class="primary-button destructive"
-          @click="cancelCopy"
-        >
-          ■ Cancel
-        </button>
       </div>
-
-      <section v-if="rows.length" class="progress">
-        <header class="progress-header">
-          <h2 class="progress-title">Progress</h2>
-          <div v-if="summary" class="progress-summary">
-            <span class="summary-pill ok">{{ summary.ok }} ok</span>
-            <span v-if="summary.failed" class="summary-pill failed">{{ summary.failed }} failed</span>
-            <span class="summary-pill muted">{{ summary.total }} total</span>
-          </div>
-        </header>
-        <div class="progress-rows">
-          <div
-            v-for="row in rows"
-            :key="row.machine"
-            class="progress-row-group"
-            :class="{ 'has-error': !!row.error }"
-          >
-            <div
-              class="progress-row"
-              :class="[row.status, { clickable: !!row.log }]"
-              @click="row.log && (row.showLog = !row.showLog)"
-            >
-              <span class="status-dot" :class="row.status" aria-hidden="true"></span>
-              <span class="machine-name">{{ row.machine }}</span>
-              <span class="row-meta">{{ statusLabel(row.status) }}</span>
-              <span class="row-meta">{{ row.newFiles != null ? `${row.newFiles} files` : '' }}</span>
-              <span class="row-meta">{{ row.elapsedSeconds != null ? `${row.elapsedSeconds}s` : '' }}</span>
-              <span class="row-meta">{{ row.exitCode != null ? `rc ${row.exitCode}` : '' }}</span>
-              <span class="row-expand" v-if="row.log">{{ row.showLog ? '▼' : '▶' }}</span>
-            </div>
-            <pre v-if="row.showLog && row.log" class="progress-log">{{ row.log }}</pre>
-            <div v-if="row.error" class="progress-error">{{ row.error }}</div>
-          </div>
-        </div>
-      </section>
 
       <footer v-if="isPackaged" class="app-footer">
         <button class="text-button" @click="checkForUpdates(false)" :disabled="running || updateState.status === 'checking'">
@@ -787,6 +744,53 @@ function dismissUpdate(): void {
         </button>
       </footer>
     </div>
+
+    <Transition name="fade">
+      <div v-if="running || rows.length" class="copy-overlay">
+        <div class="copy-overlay-shell">
+          <header class="copy-overlay-header">
+            <h2 class="copy-overlay-title">{{ running ? 'Pushing files…' : 'Push complete' }}</h2>
+            <div v-if="summary" class="progress-summary">
+              <span class="summary-pill ok">{{ summary.ok }} ok</span>
+              <span v-if="summary.failed" class="summary-pill failed">{{ summary.failed }} failed</span>
+              <span class="summary-pill muted">{{ summary.total }} total</span>
+            </div>
+          </header>
+          <div class="progress-rows copy-overlay-rows">
+            <div
+              v-for="row in rows"
+              :key="row.machine"
+              class="progress-row-group"
+              :class="{ 'has-error': !!row.error }"
+            >
+              <div
+                class="progress-row"
+                :class="[row.status, { clickable: !!row.log }]"
+                @click="row.log && (row.showLog = !row.showLog)"
+              >
+                <span class="status-dot" :class="row.status" aria-hidden="true"></span>
+                <span class="machine-name">{{ row.machine }}</span>
+                <span class="row-meta">{{ statusLabel(row.status) }}</span>
+                <span class="row-meta">{{ row.newFiles != null ? `${row.newFiles} files` : '' }}</span>
+                <span class="row-meta">{{ row.elapsedSeconds != null ? `${row.elapsedSeconds}s` : '' }}</span>
+                <span class="row-meta">{{ row.exitCode != null ? `rc ${row.exitCode}` : '' }}</span>
+                <span class="row-expand" v-if="row.log">{{ row.showLog ? '▼' : '▶' }}</span>
+              </div>
+              <pre v-if="row.showLog && row.log" class="progress-log">{{ row.log }}</pre>
+              <div v-if="row.error" class="progress-error">{{ row.error }}</div>
+            </div>
+          </div>
+          <div v-if="running" class="copy-overlay-footer">
+            <button
+              class="primary-button destructive"
+              @click="cancelCopy"
+            >
+              ■ Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <Transition name="modal">
       <div
@@ -1743,6 +1747,80 @@ body:hover, .progress-log:hover {
 .modal-leave-to { opacity: 0; }
 .modal-enter-from .modal,
 .modal-leave-to .modal { transform: scale(0.96); opacity: 0; }
+
+/* ────────────────────────────────────────────────────────────
+   Copy overlay — full-window progress while a push is running
+   ──────────────────────────────────────────────────────────── */
+.copy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900; /* below modals (1000) so the results/confirm dialogs sit on top */
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+[data-theme="hardware"] .copy-overlay {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.018) 0px,
+      rgba(0, 0, 0, 0.022) 1px,
+      transparent 2px,
+      transparent 3px
+    ),
+    linear-gradient(180deg, #2c344a 0%, #232a3d 100%);
+}
+
+.copy-overlay-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--shell-padding);
+}
+
+.copy-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.copy-overlay-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--label-weight);
+  color: var(--text-muted);
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-tracking);
+}
+
+[data-theme="hardware"] .copy-overlay-title::before { content: '── '; color: var(--accent); }
+[data-theme="hardware"] .copy-overlay-title::after { content: ' ──'; color: var(--accent); }
+
+.copy-overlay-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.copy-overlay-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  min-height: 0;
+}
+
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
 
 /* ────────────────────────────────────────────────────────────
    Progress
