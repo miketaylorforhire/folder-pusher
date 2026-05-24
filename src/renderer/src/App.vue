@@ -46,6 +46,7 @@ interface ResultsState {
   ok: number
   failed: number
   failedMachines: string[]
+  okMachines: string[]
   total: number
   cancelled: boolean
 }
@@ -466,10 +467,12 @@ async function startCopy(): Promise<void> {
   // last copy:result event hasn't drained from the renderer queue yet.
   if (rows.value.length) {
     const failedResults = ipcResults.filter((r) => r.status !== 'ok')
+    const okResults = ipcResults.filter((r) => r.status === 'ok')
     resultsDialog.value = {
-      ok: ipcResults.filter((r) => r.status === 'ok').length,
+      ok: okResults.length,
       failed: failedResults.length,
       failedMachines: failedResults.map((r) => r.machine),
+      okMachines: okResults.map((r) => r.machine),
       total: rows.value.length,
       cancelled
     }
@@ -880,7 +883,12 @@ function dismissUpdate(): void {
           </header>
           <p class="modal-message">
             <template v-if="resultsDialog.failed === 0 && resultsDialog.ok === resultsDialog.total">
-              Copied to all {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }}.
+              <template v-if="resultsDialog.total === 1">
+                Copied to {{ resultsDialog.okMachines[0] }}.
+              </template>
+              <template v-else>
+                Copied to all {{ resultsDialog.total }} machines.
+              </template>
             </template>
             <template v-else>
               {{ resultsDialog.ok }} of {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }} completed successfully.
