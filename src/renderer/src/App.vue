@@ -223,10 +223,12 @@ function deriveTemplate(srcPath: string): string | null {
 
 // Apply a source folder (from the picker, the launch CLI arg, or another app
 // like WhoPlayedThat handing one over): set it, optionally auto-fill the
-// destination template, and probe.
-async function applySource(path: string): Promise<void> {
+// destination template, and probe. External hand-offs pass autoFill:true to
+// force the template to match — the auto-fill toggle is labeled "when I
+// Browse" and only applies to the picker.
+async function applySource(path: string, opts?: { autoFill?: boolean }): Promise<void> {
   src.value = path
-  if (autoFillTemplate.value) {
+  if (opts?.autoFill ?? autoFillTemplate.value) {
     const derived = deriveTemplate(path)
     if (derived) template.value = derived
   }
@@ -407,7 +409,7 @@ onMounted(async () => {
     if (row) row.log += d.text
   })
   unsubExternalSource = window.api.onExternalSource((path) => {
-    applySource(path)
+    applySource(path, { autoFill: true })
   })
   // Main blocks the window close while a copy job is running and pings us
   // here. Themed confirm; on yes, tell main to cancel the job and proceed.
@@ -425,7 +427,7 @@ onMounted(async () => {
   // when FolderPusher was started cold rather than already running.
   const launchSource = await window.api.getLaunchSource()
   if (launchSource) {
-    applySource(launchSource)
+    applySource(launchSource, { autoFill: true })
   }
 })
 
