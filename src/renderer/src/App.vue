@@ -894,9 +894,12 @@ function dismissUpdate(): void {
             </template>
             <template v-else>
               {{ resultsDialog.ok }} of {{ resultsDialog.total }} machine{{ resultsDialog.total === 1 ? '' : 's' }} completed successfully.
-              <span v-if="resultsDialog.failed > 0">
-                Failed: {{ resultsDialog.failedMachines.join(', ') }}.
-              </span>
+              <template v-if="resultsDialog.failed > 0">
+                <div class="modal-message-line">Failed:</div>
+                <ul class="modal-message-list">
+                  <li v-for="m in resultsDialog.failedMachines" :key="m">{{ m }}</li>
+                </ul>
+              </template>
             </template>
           </p>
           <footer class="modal-actions">
@@ -1741,6 +1744,15 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; }
   font-family: var(--font-body);
   position: relative;
 }
+
+.modal-message-line { margin-top: 6px; }
+.modal-message-list {
+  margin: 4px 0 0;
+  padding-left: 22px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.modal-message-list li { margin: 2px 0; }
 
 .modal-actions {
   display: flex;
